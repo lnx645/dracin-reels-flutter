@@ -70,11 +70,9 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
   }
 
   Future<void> _pickCover() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    if (result != null && result.files.isNotEmpty) {
-      setState(() => _coverFile = result.files.first);
+    final file = await FilePicker.pickFile(type: FileType.image);
+    if (file != null) {
+      setState(() => _coverFile = file);
     }
   }
 

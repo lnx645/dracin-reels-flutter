@@ -96,9 +96,9 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
     ValueChanged<PlatformFile?> setter,
     FileType type,
   ) async {
-    final result = await FilePicker.platform.pickFiles(type: type);
-    if (result != null && result.files.isNotEmpty) {
-      setter(result.files.first);
+    final file = await FilePicker.pickFile(type: type);
+    if (file != null) {
+      setter(file);
     }
   }
 
