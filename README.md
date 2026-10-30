@@ -231,3 +231,13 @@ lepas) dengan maxLines + ellipsis sehingga tidak ada teks terpotong
 atau menumpuk. Prioritas polish: layar Dompet & Hadiah/check-in
 (kartu saldo besar + label jelas + bayangan + banner error dengan
 Coba Lagi), lalu Beranda/Feed, Player, detail series, dompet, profil.
+
+## Screenshots (v0.2.19, build 21)
+
+Tangkapan layar aplikasi dari perangkat pengguna (Oktober 2026):
+
+![Profil](docs/screenshots/01-profil.jpg)
+![Notifikasi](docs/screenshots/02-notifikasi.jpg)
+![Jelajahi](docs/screenshots/03-jelajahi.jpg)
+![Beranda Reels](docs/screenshots/04-beranda-reels.jpg)
+![Beranda Series](docs/screenshots/05-beranda-series.jpg)
