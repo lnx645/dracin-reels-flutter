@@ -6,7 +6,10 @@ plugins {
 
 android {
     namespace = "dev.uwa.dracinreels"
-    compileSdk = flutter.compileSdkVersion
+    // compileSdk 36: file_picker's flutter_plugin_android_lifecycle
+    // dependency requires consumers to compile against API 36+.
+    // minSdk stays 21 so the 32-bit phone can still install.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
