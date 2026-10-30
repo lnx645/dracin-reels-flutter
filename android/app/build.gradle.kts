@@ -25,9 +25,28 @@ android {
         versionName = flutter.versionName
     }
 
+    // Keystore RILIS permanen (bukan debug): dibaca dari environment
+    // yang diisi workflow dari repo secrets. Rilis lama memakai
+    // signingConfig debug — keystore debug runner dibuat baru tiap
+    // run, jadi tiap rilis punya tanda tangan berbeda dan Android
+    // menolak update ("paket bentrok"). Bila environment kosong,
+    // build release GAGAL dengan jelas (tidak diam-diam memakai
+    // debug) — rilis hanya boleh ditandatangani keystore permanen.
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

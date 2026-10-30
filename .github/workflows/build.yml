@@ -22,13 +22,36 @@ jobs:
           channel: stable
       - run: flutter pub get
       - run: flutter analyze
+      # Keystore RILIS permanen (satu keystore untuk semua rilis):
+      # di-decode dari repo secret ANDROID_KEYSTORE_BASE64 ke file
+      # sementara runner (bukan commit, bukan log). Tanpa ini, build
+      # release memakai keystore debug yang berubah tiap run dan
+      # Android menolak update karena konflik tanda tangan.
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
       # Token updater diteruskan sebagai build define saja (bukan commit):
       # berasal dari repo secret UPDATER_GITHUB_TOKEN (baca-saja, khusus
       # repo ini). Bila secret kosong, define kosong dan updater di
       # aplikasi menonaktifkan diri dengan diam.
       - run: flutter build apk --release --dart-define=GITHUB_TOKEN=${{ secrets.UPDATER_GITHUB_TOKEN }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       - name: Verify APK
         run: ls -lh build/app/outputs/flutter-apk/app-release.apk
+      # Bukti tanda tangan dari APK HASIL BUILD (bukan dari sumber):
+      # apksigner mencetak sertifikat penanda (SHA-256) — harus sama
+      # dengan sidik jari keystore rilis di setiap build; build GAGAL
+      # bila tanda tangan tidak valid.
+      - name: Verify APK signature
+        run: |
+          APKSIGNER=$(echo "$ANDROID_HOME"/build-tools/*/apksigner | awk '{print $1}')
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk
       # Bukti permission dari APK HASIL BUILD (bukan dari sumber):
       # daftar permission dibaca dari APK lewat aapt2, dan build GAGAL
       # bila INTERNET tidak ada — ini yang pernah hilang diam-diam dan
@@ -58,6 +81,8 @@ jobs:
           CODE=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f2)
           TAG="v$VERSION"
           NOTES="Dracin Reels Flutter $TAG - pemutar video beneran di halaman Player + pratinjau video di formulir episode + progress upload nyata (X / Y MB) + daftar episode Player hanya series aktif + label versi di Profil.
+
+          PENTING - MIGRASI TANDA TANGAN SEKALI INI: rilis ini memakai keystore rilis permanen (rilis lama memakai keystore debug yang berubah tiap build, sehingga Android menolak update sebagai paket bentrok). Pengguna WAJIB uninstall versi lama SEKALI lalu instal rilis ini; sesudah itu semua update berikutnya (termasuk via updater dalam aplikasi) akan terinstal bersih sebagai Update tanpa konflik.
 
           versionCode: $CODE
 
