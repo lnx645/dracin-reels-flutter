@@ -66,6 +66,7 @@ class VideoPlayerArea extends StatefulWidget {
     this.onPositionChanged,
     this.onDurationChanged,
     this.onAspectRatioChanged,
+    this.initialPosition,
     this.onVideoEnded,
     this.seekRequest,
     this.hlsUrl = '',
@@ -119,6 +120,14 @@ class VideoPlayerArea extends StatefulWidget {
   /// di dalam kotak 16:9). Null = induk tidak peduli (pratinjau form).
   final ValueChanged<double>? onAspectRatioChanged;
 
+  /// Posisi lanjut episode ini (dari penyimpanan, bukan 0) — di-seek
+  /// SEKALI sesudah init sukses (bila valid: > 0 dan > 10 detik
+  /// sebelum akhir; posisi ujung = sudah habis → mulai dari 0).
+  /// Tiba terlambat (sesudah init) tetap diterapkan lewat
+  /// didUpdateWidget, kecuali pengguna sudah seek manual (niat
+  /// pengguna menang). Null = mulai dari 0 (episode baru / auto-next).
+  final Duration? initialPosition;
+
   /// Dipanggil SEKALI saat video mencapai akhir (untuk auto-next
   /// induk; episode terakhir ditangani induk sebagai status akhir).
   final VoidCallback? onVideoEnded;
@@ -170,6 +179,13 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
   bool _slowDismissed = false;
   bool _lastReportedPlaying = false;
   bool _everInitialized = false;
+
+  /// Seek posisi lanjut sudah diterapkan (sekali per controller).
+  bool _initialSeekDone = false;
+
+  /// Pengguna sudah seek manual (Slider / Putar Ulang) — posisi
+  /// tersimpan yang tiba terlambat TIDAK BOLEH menimpanya.
+  bool _manualSeekHappened = false;
   bool _endedReported = false;
   bool _resumeAfterRetry = false;
   Duration _lastPosition = Duration.zero;
@@ -206,6 +222,39 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         oldWidget.localFile?.path != widget.localFile?.path) {
       _initController();
     }
+    // Posisi lanjut tiba terlambat (sesudah init): terapkan bila
+    // controller sudah siap dan belum ada seek manual / seek awal.
+    if (oldWidget.initialPosition != widget.initialPosition &&
+        widget.initialPosition != null) {
+      final controller = _controller;
+      if (controller != null && controller.value.isInitialized) {
+        _applyInitialSeek(controller);
+      }
+    }
+  }
+
+  /// Seek sekali ke posisi tersimpan episode ini (bila ada dan valid).
+  /// Posisi dalam 10 detik terakhir durasi = episode sudah habis →
+  /// tidak di-seek (mulai dari 0). Dipanggil sesudah init sukses,
+  /// sesudah klaim prewarm, dan saat initialPosition tiba terlambat.
+  Future<void> _applyInitialSeek(
+    VideoPlayerController controller,
+  ) async {
+    if (_initialSeekDone || _manualSeekHappened) {
+      return;
+    }
+    final resume = widget.initialPosition;
+    if (resume == null || resume <= Duration.zero) {
+      return;
+    }
+    final duration = controller.value.duration;
+    if (duration <= Duration.zero) {
+      return;
+    }
+    _initialSeekDone = true;
+    if (resume < duration - const Duration(seconds: 10)) {
+      await controller.seekTo(resume);
+    }
   }
 
   @override
@@ -227,6 +276,9 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         !controller.value.isInitialized) {
       return;
     }
+    // Seek dari luar (Slider / Putar Ulang) = niat pengguna: posisi
+    // tersimpan yang tiba terlambat tidak boleh menimpanya.
+    _manualSeekHappened = true;
     controller.seekTo(target);
   }
 
@@ -275,9 +327,13 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     if (aspect > 0) {
       widget.onAspectRatioChanged?.call(aspect);
     }
-    if (widget.playRequest.value) {
-      controller.play();
-    }
+    // Lanjut posisi tersimpan dulu, baru putar (bila diminta) — agar
+    // tidak sempat tampil frame 0 sebelum seek.
+    _applyInitialSeek(controller).then((_) {
+      if (widget.playRequest.value && _controller == controller) {
+        controller.play();
+      }
+    });
   }
 
   /// Retry manual (tombol Coba Lagi): hitungan auto-retry di-reset dan
@@ -439,6 +495,8 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     if (aspect > 0) {
       widget.onAspectRatioChanged?.call(aspect);
     }
+    // Lanjut posisi tersimpan episode ini (bukan 0) — sekali saja.
+    await _applyInitialSeek(controller);
     // Lanjut dari posisi terakhir (retry jaringan) bila masih valid.
     if (_positionUrl == _resolvedUrl &&
         _lastPosition > Duration.zero &&

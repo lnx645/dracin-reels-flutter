@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
@@ -71,6 +72,34 @@ class _PlayerPageState extends State<PlayerPage> {
   /// kotak episode lama.
   double _videoAspectRatio = 9 / 16;
 
+  /// Kunci global area video episode aktif: SATU controller untuk
+  /// semua state Player (pause/play/focus/fullscreen). Tanpa ini,
+  /// Flutter melepas-pasang state tiap cabang build berubah (Scaffold
+  /// PLAY vs PAUSE vs fullscreen) sehingga controller baru dibuat dan
+  /// posisi reset ke 0. GlobalKey memindahkan Element yang sama antar
+  /// induk — controller (posisi + status putar) dipertahankan persis.
+  /// Diganti tiap pindah episode (controller baru memang benar untuk
+  /// episode baru).
+  GlobalKey _videoKey = GlobalKey();
+
+  /// Posisi lanjut episode aktif (dari penyimpanan, bukan 0).
+  /// null = belum dimuat / tidak ada simpanan. Dibaca: lokal dulu
+  /// (terbaru, jalan tanpa login), fallback riwayat API bila lokal
+  /// kosong (lintas perangkat). Disimpan: lokal selalu + WatchProgress
+  /// API bila login (field position_seconds memang didukung API).
+  Duration? _resumePosition;
+
+  /// Id episode yang posisi lanjutnya sedang dimuat/disimpan.
+  int _resumeEpisodeId = 0;
+
+  /// Posisi terakhir yang sudah disimpan (throttle simpan berkala).
+  Duration _lastSavedPosition = Duration.zero;
+
+  /// Auto-next menekan resume (perintah: episode berikutnya lewat
+  /// auto-next wajar mulai dari 0). Pindah manual / buka ulang tetap
+  /// lanjut dari posisi tersimpan.
+  bool _resumeSuppressed = false;
+
   /// Episode TERAKHIR series sudah selesai diputar (bukan mengulang
   /// diam-diam, bukan loading tanpa akhir): overlay status akhir.
   bool _ended = false;
@@ -135,6 +164,15 @@ class _PlayerPageState extends State<PlayerPage> {
     super.initState();
     _currentId = widget.episodeId;
     _seriesId = _parseSeriesId(widget.episodeId) ?? widget.seriesId;
+  }
+
+  @override
+  void deactivate() {
+    // Keluar Player = simpan posisi terakhir (best-effort, tanpa
+    // await: halaman sedang dilepas). Deactivate (bukan dispose)
+    // agar context masih valid untuk repository.
+    _savePositionForExit();
+    super.deactivate();
   }
 
   @override
@@ -301,6 +339,106 @@ class _PlayerPageState extends State<PlayerPage> {
     if (mounted) {
       setState(() => _videoPosition = position);
     }
+    // Simpan berkala: tiap 10 detik putar (bukan tiap detik — hemat
+    // tulis + hemat API). Episode dari detail yang sedang dimuat.
+    final episodeId = _resumeEpisodeId;
+    if (episodeId > 0 &&
+        position.inSeconds >= 10 &&
+        position - _lastSavedPosition >= const Duration(seconds: 10)) {
+      _lastSavedPosition = position;
+      _savePosition(episodeId, position);
+    }
+  }
+
+  /// Simpan posisi ke lokal (selalu) + WatchProgress API (bila login;
+  /// putProgress no-op tanpa token, gagal kirim tidak mengganggu).
+  /// Posisi <= 5 detik tidak disimpan (dianggap awal) — kecuali saat
+  /// keluar/pindah (allowClear) untuk menghapus simpanan lama bila
+  /// pengguna sengaja kembali ke awal. Repository diambil SEBELUM
+  /// await pertama (lint use_build_context_synchronously).
+  Future<void> _savePosition(
+    int episodeId,
+    Duration position, {
+    bool allowClear = false,
+  }) async {
+    if (episodeId <= 0) {
+      return;
+    }
+    final repository = context.read<WalletRepository>();
+    if (position.inSeconds <= 5) {
+      if (!allowClear) {
+        return;
+      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('watch_position_$episodeId');
+      } catch (_) {}
+      try {
+        await repository.putProgress(episodeId, 0);
+      } catch (_) {}
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        'watch_position_$episodeId',
+        position.inSeconds,
+      );
+    } catch (_) {}
+    try {
+      await repository.putProgress(episodeId, position.inSeconds);
+    } catch (_) {}
+  }
+
+  /// Simpan posisi saat keluar Player / pindah episode (best-effort,
+  /// tanpa await — pemanggil sedang melepas halaman). Bila posisi
+  /// sudah kembali ke awal (<= 5 detik) dan dulu ada simpanan, hapus
+  /// simpanan lama agar buka ulang mulai dari 0 (niat pengguna).
+  void _savePositionForExit() {
+    final episodeId = _resumeEpisodeId;
+    if (episodeId <= 0) {
+      return;
+    }
+    if (_videoPosition.inSeconds > 5) {
+      _lastSavedPosition = _videoPosition;
+      _savePosition(episodeId, _videoPosition);
+    } else if (_resumePosition != null) {
+      _savePosition(episodeId, _videoPosition, allowClear: true);
+    }
+  }
+
+  /// Muat posisi lanjut: lokal dulu (terbaru), fallback riwayat API
+  /// (lintas perangkat) bila lokal kosong. Episode selesai (finished)
+  /// tidak dilanjutkan.
+  Future<void> _loadResumePosition(int episodeId) async {
+    final repository = context.read<WalletRepository>();
+    Duration? found;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final secs = prefs.getInt('watch_position_$episodeId');
+      if (secs != null && secs > 0) {
+        found = Duration(seconds: secs);
+      }
+    } catch (_) {}
+    if (found == null) {
+      try {
+        final history = await repository.getHistory();
+        for (final entry in history) {
+          if (entry.episodeId == episodeId &&
+              !entry.finished &&
+              entry.positionSeconds > 0) {
+            found = Duration(seconds: entry.positionSeconds);
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!mounted || _resumeEpisodeId != episodeId) {
+      return;
+    }
+    if (found != null) {
+      setState(() => _resumePosition = found);
+    }
   }
 
   void _onVideoDuration(Duration duration) {
@@ -425,6 +563,8 @@ class _PlayerPageState extends State<PlayerPage> {
 
   void _switchTo(String episodeId, {bool autoPlay = false}) {
     _hideTimer?.cancel();
+    // Simpan posisi episode lama sebelum pindah (best-effort).
+    _savePositionForExit();
     // Prefetch TIDAK dibuang di sini: bila pindah ke episode yang
     // memang di-prefetch (auto-next), area barulah yang mengklaimnya.
     // Prefetch basi dibersihkan di build (URL tidak cocok dengan
@@ -434,7 +574,14 @@ class _PlayerPageState extends State<PlayerPage> {
       _seriesId = _parseSeriesId(episodeId) ?? _seriesId;
       _isPlaying = false;
       // Episode baru = state PAUSE (chrome kembali) + posisi +
-      // deskripsi + status akhir di-reset.
+      // deskripsi + status akhir di-reset. Kunci video DIGANTI agar
+      // episode baru dapat controller baru (yang benar); episode
+      // yang sama TIDAK PERNAH lewat sini saat pindah mode.
+      _videoKey = GlobalKey();
+      _resumePosition = null;
+      _resumeEpisodeId = 0;
+      _resumeSuppressed = autoPlay;
+      _lastSavedPosition = Duration.zero;
       _chromeVisible = true;
       _videoPosition = Duration.zero;
       _videoDuration = Duration.zero;
@@ -789,8 +936,14 @@ class _PlayerPageState extends State<PlayerPage> {
             );
     } else if (detail != null) {
       video = VideoPlayerArea(
-        key: ValueKey<String>('video-${detail.id}'),
+        // GlobalKey episode aktif: SATU controller untuk semua state
+        // (pause/play/focus/fullscreen) — pindah mode tidak me-remount
+        // area, posisi + status putar dipertahankan persis.
+        key: _videoKey,
         videoUrl: detail.videoUrl,
+        // Posisi lanjut episode ini (null = mulai dari 0: episode
+        // baru / auto-next / belum pernah dibuka).
+        initialPosition: _resumePosition,
         // Judul untuk layar loading + tombol Kembali selama loading.
         title: detail.title.isNotEmpty
             ? 'Ep. ${detail.number} · ${detail.title}'
@@ -1353,6 +1506,21 @@ class _PlayerPageState extends State<PlayerPage> {
                       _fetchSubtitles(subtitleUrl);
                     }
                   });
+                }
+                // Muat posisi lanjut episode ini (sekali per
+                // episode): id dicatat selalu (agar simpan berkala
+                // mengikuti episode aktif), muat hanya bila tidak
+                // terkunci dan tidak ditekan auto-next. Dipanggil
+                // dari build tanpa setState — setState hanya saat
+                // hasil muat tiba (posisi diteruskan ke area video
+                // lewat initialPosition).
+                if (detail != null && detail.id != _resumeEpisodeId) {
+                  _resumeEpisodeId = detail.id;
+                  _resumePosition = null;
+                  _lastSavedPosition = Duration.zero;
+                  if (!locked && !_resumeSuppressed) {
+                    _loadResumePosition(detail.id);
+                  }
                 }
                 final chromeVisible = _chromeVisible && !_fullscreen;
                 final videoWidget = _videoArea(
