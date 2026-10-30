@@ -74,52 +74,56 @@ class _HomePageState extends State<HomePage> {
         ..add(const SeriesListStarted()),
       child: Column(
         children: <Widget>[
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
-                children: <Widget>[
-                  RichText(
-                    text: const TextSpan(
-                      style: TextStyle(
-                        fontFamily: 'PlusJakartaSans',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      children: <TextSpan>[
-                        TextSpan(
-                          text: 'Dracin',
-                          style: TextStyle(color: Colors.white),
+          // Header Beranda HANYA di mode Series. Di mode Reels header ini
+          // disembunyikan — switch mode pindah ke dalam FeedTopBar — agar
+          // tidak ada branding ganda (DracinReels dua kali).
+          if (_mode == HomeMode.series)
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Row(
+                  children: <Widget>[
+                    RichText(
+                      text: const TextSpan(
+                        style: TextStyle(
+                          fontFamily: 'PlusJakartaSans',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
                         ),
-                        TextSpan(
-                          text: 'Reels',
-                          style: TextStyle(color: AppColors.accent),
+                        children: <TextSpan>[
+                          TextSpan(
+                            text: 'Dracin',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          TextSpan(
+                            text: 'Reels',
+                            style: TextStyle(color: AppColors.accent),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    SegmentedButton<HomeMode>(
+                      segments: const <ButtonSegment<HomeMode>>[
+                        ButtonSegment(
+                          value: HomeMode.series,
+                          label: Text('Series'),
+                        ),
+                        ButtonSegment(
+                          value: HomeMode.reels,
+                          label: Text('Reels'),
                         ),
                       ],
+                      selected: <HomeMode>{_mode},
+                      onSelectionChanged: (selection) {
+                        setState(() => _mode = selection.first);
+                      },
                     ),
-                  ),
-                  const Spacer(),
-                  SegmentedButton<HomeMode>(
-                    segments: const <ButtonSegment<HomeMode>>[
-                      ButtonSegment(
-                        value: HomeMode.series,
-                        label: Text('Series'),
-                      ),
-                      ButtonSegment(
-                        value: HomeMode.reels,
-                        label: Text('Reels'),
-                      ),
-                    ],
-                    selected: <HomeMode>{_mode},
-                    onSelectionChanged: (selection) {
-                      setState(() => _mode = selection.first);
-                    },
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           Expanded(
             child: _mode == HomeMode.series
                 ? HomeSections(
@@ -127,7 +131,15 @@ class _HomePageState extends State<HomePage> {
                     onSeeAll: (title, series) =>
                         _openSeeAll(context, title, series),
                   )
-                : const FeedPage(),
+                : FeedPage(
+                    showModeSwitch: true,
+                    isSeriesMode: false,
+                    onModeChanged: (toSeries) {
+                      if (toSeries) {
+                        setState(() => _mode = HomeMode.series);
+                      }
+                    },
+                  ),
           ),
         ],
       ),

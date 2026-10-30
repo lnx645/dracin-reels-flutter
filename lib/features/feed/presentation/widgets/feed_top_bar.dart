@@ -7,17 +7,26 @@ import '../../../wallet/presentation/pages/rewards_page.dart';
 import '../bloc/feed_event.dart';
 
 /// Bilah atas feed: judul aplikasi, pil koin, tab Untuk Anda/Mengikuti.
-/// Pil koin menampilkan saldo dompet (API bila masuk, lokal bila belum)
-/// dan membuka halaman Dompet & Hadiah saat diketuk.
+/// Bila [showModeSwitch] aktif, tampilkan juga switch mode Series/Reels
+/// di bawah baris judul — dipakai mode Reels, karena header Beranda
+/// disembunyikan di mode itu (menghindari header ganda).
+/// [isSeriesMode] true = Series terpilih; [onModeChanged] menerima
+/// true bila pengguna memilih Series, false bila memilih Reels.
 class FeedTopBar extends StatelessWidget {
   const FeedTopBar({
     required this.tab,
     required this.onTabChanged,
+    this.showModeSwitch = false,
+    this.isSeriesMode = false,
+    this.onModeChanged,
     super.key,
   });
 
   final FeedTab tab;
   final ValueChanged<FeedTab> onTabChanged;
+  final bool showModeSwitch;
+  final bool isSeriesMode;
+  final ValueChanged<bool>? onModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +103,18 @@ class FeedTopBar extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            if (showModeSwitch)
+              SegmentedButton<bool>(
+                segments: const <ButtonSegment<bool>>[
+                  ButtonSegment(value: true, label: Text('Series')),
+                  ButtonSegment(value: false, label: Text('Reels')),
+                ],
+                selected: <bool>{isSeriesMode},
+                onSelectionChanged: (selection) {
+                  onModeChanged?.call(selection.first);
+                },
+              ),
+            if (showModeSwitch) const SizedBox(height: 12),
             Row(
               children: <Widget>[
                 _TabPill(

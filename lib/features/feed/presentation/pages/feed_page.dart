@@ -16,7 +16,19 @@ import '../widgets/episode_cover.dart';
 import '../widgets/feed_top_bar.dart';
 
 class FeedPage extends StatefulWidget {
-  const FeedPage({super.key});
+  const FeedPage({
+    this.showModeSwitch = false,
+    this.isSeriesMode = false,
+    this.onModeChanged,
+    super.key,
+  });
+
+  /// Teruskan ke FeedTopBar: di mode Reels, header Beranda disembunyikan
+  /// sehingga switch mode Series/Reels tinggal di FeedTopBar (tanpa
+  /// header ganda). Di pemakaian lain, default false = tanpa switch.
+  final bool showModeSwitch;
+  final bool isSeriesMode;
+  final ValueChanged<bool>? onModeChanged;
 
   @override
   State<FeedPage> createState() => _FeedPageState();
@@ -65,6 +77,9 @@ class _FeedPageState extends State<FeedPage> {
               tab: state.tab,
               onTabChanged: (tab) =>
                   context.read<FeedBloc>().add(FeedTabChanged(tab)),
+              showModeSwitch: widget.showModeSwitch,
+              isSeriesMode: widget.isSeriesMode,
+              onModeChanged: widget.onModeChanged,
             ),
             Expanded(
               child: PageView.builder(

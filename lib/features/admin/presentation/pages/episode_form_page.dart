@@ -149,12 +149,20 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
     });
     try {
       final repository = context.read<AdminRepository>();
+      // JANGAN hapus link video lama saat edit: bila sumber dialihkan ke
+      // Upload lalu disimpan TANPA file baru, video_url lama harus tetap
+      // terkirim (bukan ''). Hanya kirim '' untuk episode BARU tanpa file.
+      final existingVideoUrl = widget.existing?['video_url'];
+      final oldVideoUrl = existingVideoUrl is String ? existingVideoUrl : '';
+      final formVideoUrl = _source == VideoSource.link
+          ? link
+          : (_isEdit ? oldVideoUrl : '');
       final form = AdminEpisodeForm(
         seriesId: widget.seriesId,
         number: number,
         title: title,
         description: _descriptionController.text.trim(),
-        videoUrl: _source == VideoSource.link ? link : '',
+        videoUrl: formVideoUrl,
         coinPrice: price,
         status: _status,
       );
@@ -298,6 +306,16 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                   FileType.video,
                 ),
               ),
+              if (_isEdit) ...<Widget>[
+                const SizedBox(height: 8),
+                const Text(
+                  'Video lama tetap dipakai bila tidak memilih file baru.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               const Text(
                 'Bila link sudah diisi (mode Link), upload tidak wajib. '
