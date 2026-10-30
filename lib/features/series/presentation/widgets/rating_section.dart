@@ -60,9 +60,13 @@ class _RatingSectionState extends State<RatingSection> {
       if (!mounted) {
         return;
       }
-      // 404 = endpoint rating belum ter-deploy di server: keadaan
-      // data saat ini sama dengan "belum ada rating", bukan error
-      // yang harus menakuti pengguna.
+      // 404 = endpoint rating tidak tersedia di server (keadaan lama
+      // sebelum backend 5bc71fe ter-deploy): keadaan data saat ini
+      // sama dengan "belum ada rating", bukan error yang harus
+      // menakuti pengguna. Saat endpoint hidup, cabang ini tidak
+      // terpakai karena GET /series/{id}/ratings mengembalikan
+      // average_rating null + rating_count 0 untuk series yang belum
+      // dinilai.
       if (error.statusCode == 404) {
         setState(() {
           _summary = const SeriesRatingSummary(

@@ -127,12 +127,37 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
 
   /// Urut sisi klien (API belum punya param urut). Tiebreak id
   /// supaya urutan deterministis, bukan acak.
+  /// Peringkat memakai rating EFEKTIF: average_rating nyata dulu;
+  /// bila null, kolom lama `rating` bila > 0; bila keduanya kosong,
+  /// series dianggap belum berperingkat dan ditaruh PALING AKHIR
+  /// (bukan 0 yang disamakan dengan berperingkat rendah).
+  static double? _effectiveRating(Series series) {
+    if (series.averageRating != null) {
+      return series.averageRating;
+    }
+    if (series.rating > 0) {
+      return series.rating;
+    }
+    return null;
+  }
+
   List<Series> _sorted(List<Series> list, SeriesSort sort) {
     final sorted = List<Series>.from(list);
     switch (sort) {
       case SeriesSort.rating:
         sorted.sort((a, b) {
-          final byRating = b.rating.compareTo(a.rating);
+          final aRating = _effectiveRating(a);
+          final bRating = _effectiveRating(b);
+          if (aRating == null && bRating == null) {
+            return a.id.compareTo(b.id);
+          }
+          if (aRating == null) {
+            return 1;
+          }
+          if (bRating == null) {
+            return -1;
+          }
+          final byRating = bRating.compareTo(aRating);
           return byRating != 0 ? byRating : a.id.compareTo(b.id);
         });
       case SeriesSort.newest:

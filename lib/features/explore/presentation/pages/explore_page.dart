@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/design/colors.dart';
 import '../../../../core/design/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../series/domain/entities/series.dart';
@@ -18,14 +19,36 @@ import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 ///   (Semua + tiap genre → ?genre_id=), pemisah, chip urutan
 ///   Peringkat / Baru Tayang. Tanpa wrap, tanpa chip yatim.
 ///   API belum punya param urut → urut sisi klien, dilaporkan jujur.
-/// - Grid poster 2 kolom gaya masonry: cover, judul, baris
-///   "Genre | N episode"; ketuk → detail series.
+/// - Grid COMPACT 3 kolom rapat (pola dari referensi uwa, BUKAN
+///   salinan kontennya): poster portrait 3:4, gap 8, judul kecil
+///   (13px semibold, maks 2 baris + elipsis) + baris penanda kecil;
+///   lebih banyak item terlihat per layar dibanding masonry 2 kolom.
+///   Badge di poster HANYA "Baru" — untuk series yang created_at-nya
+///   dalam 30 hari terakhir (ambang kNewSeriesDays, di bawah); TIDAK
+///   ADA badge "Populer" dan TIDAK ADA angka tontonan karena API
+///   tidak menyediakan data itu — jangan dikarang, jangan disalin.
 /// - Kartu "Lanjutkan" dari WatchProgress API (satu ketukan kembali
 ///   ke cerita), tanpa angka karangan.
 /// - YANG TIDAK DIBUAT (perintah eksplisit): badge kuning mengambang,
-///   label "Tarik", dan elemen promo melayang sejenis.
+///   label "Tarik", elemen promo melayang, baris tab referensi
+///   (Baru/Kategori/Komunitas/VIP), bottom nav referensi, ikon
+///   mahkota VIP, dan badge hadiah melayang (+55).
 /// - Data tetap API Dracin, merek tetap Dracin Reels, bottom nav tetap
 ///   milik kita. Kosong → empty state jujur; gagal → error + retry.
+///
+/// Ambang "Baru": series yang dibuat dalam 30 hari terakhir
+/// (berdasarkan created_at API). Series tanpa created_at atau
+/// created_at di masa depan tidak pernah ber-badge "Baru".
+const int kNewSeriesDays = 30;
+
+bool _isNewSeries(Series series) {
+  final createdAt = series.createdAt;
+  if (createdAt == null) {
+    return false;
+  }
+  final age = DateTime.now().difference(createdAt);
+  return !age.isNegative && age.inDays <= kNewSeriesDays;
+}
 class ExplorePage extends StatelessWidget {
   const ExplorePage({required this.onOpenEpisode, super.key});
 
@@ -245,7 +268,7 @@ class _ExploreViewState extends State<ExploreView> {
                   );
                 },
               ),
-              // (3) Grid poster masonry 2 kolom (series → detail).
+              // (3) Grid poster COMPACT 3 kolom (series → detail).
               Expanded(
                 child: BlocBuilder<SeriesListBloc, SeriesListState>(
                   builder: (context, seriesState) {
@@ -259,7 +282,7 @@ class _ExploreViewState extends State<ExploreView> {
                     }
                     if (seriesState.isLoading &&
                         seriesState.series.isEmpty) {
-                      return const DracinGridSkeleton();
+                      return const DracinCompactGridSkeleton();
                     }
                     if (seriesState.series.isEmpty) {
                       final filtering =
@@ -282,71 +305,50 @@ class _ExploreViewState extends State<ExploreView> {
                             : null,
                       );
                     }
-                    // Masonry tanpa dependensi baru: satu scroll,
-                    // dua kolom, item dibagi selang-seling; tinggi kartu
-                    // bervariasi lewat poster 3:4 + judul 1–2 baris.
-                    final left = <Series>[];
-                    final right = <Series>[];
-                    for (var i = 0;
-                        i < seriesState.series.length;
-                        i++) {
-                      if (i.isEven) {
-                        left.add(seriesState.series[i]);
-                      } else {
-                        right.add(seriesState.series[i]);
-                      }
-                    }
-                    Widget column(List<Series> items) {
-                      final children = <Widget>[];
-                      for (final series in items) {
-                        if (children.isNotEmpty) {
-                          children.add(const SizedBox(height: 16));
-                        }
-                        children.add(
-                          _SeriesPosterCard(
-                            series: series,
-                            onOpen: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => SeriesDetailPage(
-                                    seriesId: series.id,
-                                    onOpenEpisode: widget.onOpenEpisode,
-                                  ),
-                                ),
+                    // Grid COMPACT 3 kolom rapat: poster portrait +
+                    // judul kecil 2 baris + penanda kecil. Lazy via
+                    // ScrollController yang sama (near-bottom → More).
+                    return Column(
+                      children: <Widget>[
+                        Expanded(
+                          child: GridView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.only(bottom: 8),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.52,
+                            ),
+                            itemCount: seriesState.series.length,
+                            itemBuilder: (context, index) {
+                              final series = seriesState.series[index];
+                              return _CompactSeriesCard(
+                                series: series,
+                                onOpen: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => SeriesDetailPage(
+                                        seriesId: series.id,
+                                        onOpenEpisode:
+                                            widget.onOpenEpisode,
+                                      ),
+                                    ),
+                                  );
+                                },
                               );
                             },
                           ),
-                        );
-                      }
-                      return Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: children,
                         ),
-                      );
-                    }
-
-                    return SingleChildScrollView(
-                      controller: _scrollController,
-                      child: Column(
-                        children: <Widget>[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              column(left),
-                              const SizedBox(width: 12),
-                              column(right),
-                            ],
-                          ),
-                          if (seriesState.isLoadingMore) ...<Widget>[
-                            const SizedBox(height: 24),
-                            const Center(
+                        if (seriesState.isLoadingMore)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Center(
                               child: CircularProgressIndicator(),
                             ),
-                            const SizedBox(height: 24),
-                          ],
-                        ],
-                      ),
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -414,12 +416,16 @@ class _ContinueCard extends StatelessWidget {
   }
 }
 
-/// Kartu poster series: cover (atau gradasi bertitel bila cover tidak
-/// ada/gagal), judul Semibold mudah dipindai, baris penanda
-/// "Genre | N episode" (bagian yang tidak diketahui dihilangkan,
-/// bukan dikarang). Ketuk → detail series.
-class _SeriesPosterCard extends StatelessWidget {
-  const _SeriesPosterCard({required this.series, required this.onOpen});
+/// Kartu poster series COMPACT (grid 3 kolom Jelajahi): cover
+/// portrait 3:4 (atau gradasi bertitel bila cover tidak ada/gagal —
+/// aturan fallback thumbnail tetap), judul KECIL semibold maks 2
+/// baris + elipsis, baris penanda kecil "Genre | N episode" (bagian
+/// yang tidak diketahui dihilangkan, bukan dikarang). Badge HANYA
+/// "Baru" (series.createdAt dalam 30 hari terakhir — lihat
+/// _isNewSeries); tidak ada badge "Populer", tidak ada angka
+/// tontonan. Ketuk → detail series.
+class _CompactSeriesCard extends StatelessWidget {
+  const _CompactSeriesCard({required this.series, required this.onOpen});
 
   final Series series;
   final VoidCallback onOpen;
@@ -439,35 +445,67 @@ class _SeriesPosterCard extends StatelessWidget {
         markers.isEmpty ? 'Belum ada episode' : markers.join(' | ');
     return InkWell(
       onTap: onOpen,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             child: AspectRatio(
               aspectRatio: 3 / 4,
-              child: resolvedCover.isEmpty
-                  ? _TitledGradient(title: series.title)
-                  : Image.network(
-                      resolvedCover,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _TitledGradient(title: series.title),
+              child: Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: resolvedCover.isEmpty
+                        ? _TitledGradient(title: series.title)
+                        : Image.network(
+                            resolvedCover,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                _TitledGradient(title: series.title),
+                          ),
+                  ),
+                  if (_isNewSeries(series))
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: DracinColors.accent,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Text(
+                          'Baru',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             series.title,
-            style: theme.textTheme.titleSmall,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             markerLine,
-            style: theme.textTheme.labelMedium,
+            style: theme.textTheme.labelMedium?.copyWith(fontSize: 11),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

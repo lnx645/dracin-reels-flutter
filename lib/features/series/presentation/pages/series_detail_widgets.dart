@@ -82,9 +82,11 @@ class SeriesCoverHeader extends StatelessWidget {
                 ),
               ),
             ),
-          // Badge rating: tampil hanya bila ada nilai (> 0). Nilai 0 =
-          // belum ada data rating — menampilkan "0.0" menyesatkan.
-          if (series.rating > 0)
+          // Badge rating: HANYA dari average_rating nyata (backend
+          // rating). NULL = belum ada yang menilai → badge tidak
+          // tampil sama sekali (bukan "0.0"). Kolom lama `rating`
+          // tidak dipakai di sini.
+          if (series.averageRating != null)
             Positioned(
               top: 12,
               right: 12,
@@ -103,7 +105,7 @@ class SeriesCoverHeader extends StatelessWidget {
                     const Icon(Icons.star, size: 14, color: Colors.amber),
                     const SizedBox(width: 4),
                     Text(
-                      series.rating.toStringAsFixed(1),
+                      series.averageRating!.toStringAsFixed(1),
                       style: theme.textTheme.labelMedium,
                     ),
                   ],

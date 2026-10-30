@@ -12,6 +12,9 @@ class Series {
     required this.genres,
     this.tagline = '',
     this.createdAt,
+    this.averageRating,
+    this.ratingCount = 0,
+    this.userRating,
   });
 
   final int id;
@@ -23,6 +26,24 @@ class Series {
   final int freeEpisodeCount;
   final double rating;
   final List<Genre> genres;
+
+  /// Rating rata-rata NYATA dari endpoint rating (backend 5bc71fe):
+  /// `average_rating` pada GET /series dan /series/{id}, serta
+  /// GET /series/{id}/ratings. NULL = belum ada yang menilai — BUKAN
+  /// 0, dan UI tidak boleh menampilkan 0 bintang sebagai data.
+  /// Kolom lama `rating` TIDAK diubah backend dan tidak lagi dipakai
+  /// sebagai sumber tampilan rating (hanya fallback urutan bila
+  /// averageRating null dan nilainya > 0).
+  final double? averageRating;
+
+  /// Jumlah penilai dari `rating_count` (0 = belum ada yang menilai).
+  final int ratingCount;
+
+  /// Bintang milik pengguna login dari `user_rating` (hanya bila login
+  /// + pernah menilai; null bila anonim/belum menilai). Bintang user
+  /// HANYA ditampilkan bila login — nilai ini sendiri sudah menjamin
+  /// itu karena backend hanya mengembalikannya untuk token login.
+  final int? userRating;
 
   /// Tanggal series dibuat (dari `created_at` API). Null bila backend
   /// tidak mengembalikannya — urutan "Baru Tayang" menaruh yang tanpa
@@ -46,6 +67,8 @@ class Series {
     }
     final rating = json['rating'];
     final createdRaw = json['created_at'];
+    final averageRaw = json['average_rating'];
+    final userRatingRaw = json['user_rating'];
     return Series(
       id: json['id'] is int ? json['id'] as int : 0,
       title: json['title'] is String ? json['title'] as String : '',
@@ -64,6 +87,12 @@ class Series {
           ? json['free_episode_count'] as int
           : 0,
       rating: rating is num ? rating.toDouble() : 0,
+      averageRating:
+          averageRaw is num ? averageRaw.toDouble() : null,
+      ratingCount: json['rating_count'] is int
+          ? json['rating_count'] as int
+          : 0,
+      userRating: userRatingRaw is int ? userRatingRaw : null,
       genres: genres,
       createdAt: createdRaw is String
           ? DateTime.tryParse(createdRaw)

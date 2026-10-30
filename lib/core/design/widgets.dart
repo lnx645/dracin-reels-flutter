@@ -653,6 +653,43 @@ class DracinGridSkeleton extends StatelessWidget {
   }
 }
 
+/// Skeleton grid COMPACT 3 kolom (pasangan grid Jelajahi baru):
+/// kotak poster 3:4 + 2 garis kecil per sel, tanpa data karangan.
+class DracinCompactGridSkeleton extends StatelessWidget {
+  const DracinCompactGridSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 3,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 12,
+      childAspectRatio: 0.52,
+      padding: const EdgeInsets.only(bottom: 8),
+      children: List<Widget>.generate(
+        12,
+        (_) => const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            AspectRatio(
+              aspectRatio: 3 / 4,
+              child: DracinSkeletonBox(
+                width: double.infinity,
+                height: double.infinity,
+                radius: 12,
+              ),
+            ),
+            SizedBox(height: 6),
+            DracinSkeletonBox(width: double.infinity, height: 12),
+            SizedBox(height: 4),
+            DracinSkeletonBox(width: 60, height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Bintang rating: tampil (rata-rata + jumlah) atau input (ketuk).
 /// Rata-rata null = belum ada yang menilai: tampil teks jujur, bukan
 /// bintang kosong yang dikira nilai 0.
