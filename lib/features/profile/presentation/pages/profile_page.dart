@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../../core/session/session_cubit.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -269,6 +270,26 @@ class ProfileView extends StatelessWidget {
                         ),
                       ),
                     ],
+                    // Label versi TERLIHAT — pembuktian APK mana yang
+                    // terinstal (versi + build dari package_info_plus),
+                    // supaya tidak lagi menebak "yang terbaru".
+                    const SizedBox(height: 24),
+                    FutureBuilder<PackageInfo>(
+                      future: PackageInfo.fromPlatform(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const SizedBox.shrink();
+                        }
+                        final info = snapshot.data!;
+                        return Center(
+                          child: Text(
+                            'Versi ${info.version} '
+                            '(build ${info.buildNumber})',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),

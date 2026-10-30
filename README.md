@@ -3,11 +3,14 @@
 Aplikasi reels video pendek ala TikTok, ditulis ulang dengan Flutter
 (menggantikan versi Rust/egui yang diparkir — repo Rust tidak dihapus).
 
-## Status jujur v0.2.0
+## Status jujur v0.2.3
 
-- **Video BELUM memutar.** Area video adalah placeholder gradasi + judul +
-  ikon putar/jeda (state UI saja). Pemutaran memakai URL apa pun sumbernya
-  (upload admin atau link eksternal) saat pemutar beneran dipasang.
+- **Video MEMUTAR di halaman Player** (file video langsung atau HLS
+  dari `video_url` episode — path upload `media/...` di-resolve lewat
+  basis media proxy, link eksternal http(s) dipakai apa adanya).
+  Episode terkunci tetap tidak memutar. Tautan halaman web (bukan file
+  video) tidak dapat diputar — gagal ditampilkan sebagai error asli +
+  Coba Lagi, bukan pura-pura memutar.
 - **Fitur Melolo (fase 2) SUDAH jalan — lokal dulu, API bila masuk:**
   detail series + daftar episode (Gratis/Terkunci + harga koin),
   dompet koin (saldo di header, check-in harian 1x/hari),

@@ -1,10 +1,34 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/series.dart';
 
-/// Cover header detail series: gradasi halus, sudut 16, badge rating
-/// di kanan atas (posisi tetap), judul terbaca di atas gradasi.
+/// Gradasi cadangan bila cover/thumbnail tidak ada atau gagal dimuat —
+/// rapi bertitel/bernomor, bukan kotak kosong atau rusak.
+class _GradientBox extends StatelessWidget {
+  const _GradientBox({this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF3B1D5A), Color(0xFF0B0E14)],
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Cover header detail series: foto cover dari API bila ada (URL relatif
+/// di-resolve lewat basis media proxy), gradasi bila tidak ada/gagal.
+/// Judul tetap terbaca lewat scrim bawah saat foto tampil.
 class SeriesCoverHeader extends StatelessWidget {
   const SeriesCoverHeader({required this.series, super.key});
 
@@ -13,15 +37,12 @@ class SeriesCoverHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final coverUrl = resolveMediaUrl(series.coverUrl);
     return Container(
       height: 200,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFF3B1D5A), Color(0xFF0B0E14)],
-        ),
         boxShadow: <BoxShadow>[
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),
@@ -32,6 +53,35 @@ class SeriesCoverHeader extends StatelessWidget {
       ),
       child: Stack(
         children: <Widget>[
+          Positioned.fill(
+            child: coverUrl.isEmpty
+                ? const _GradientBox()
+                : Image.network(
+                    coverUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const _GradientBox(),
+                  ),
+          ),
+          if (coverUrl.isNotEmpty)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 110,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      Color(0x00000000),
+                      Color(0xDD000000),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 12,
             right: 12,
@@ -104,6 +154,10 @@ class EpisodeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Thumbnail episode dari API (URL relatif di-resolve lewat basis
+    // media proxy). Null/kosong/gagal → kotak gradasi rapi bernomor,
+    // bukan kotak kosong atau rusak.
+    final thumbUrl = resolveMediaUrl(episode.thumbnailUrl ?? '');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -117,12 +171,33 @@ class EpisodeRow extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: <Widget>[
-              SizedBox(
-                width: 32,
-                child: Text(
-                  '${episode.number}',
-                  style: theme.textTheme.titleMedium,
-                  textAlign: TextAlign.center,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: thumbUrl.isEmpty
+                      ? _GradientBox(
+                          child: Center(
+                            child: Text(
+                              '${episode.number}',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                          ),
+                        )
+                      : Image.network(
+                          thumbUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              _GradientBox(
+                            child: Center(
+                              child: Text(
+                                '${episode.number}',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 12),

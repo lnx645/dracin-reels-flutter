@@ -12,8 +12,24 @@ abstract class AdminRepository {
   Future<Map<String, dynamic>> createEpisode(AdminEpisodeForm form);
   Future<void> updateEpisode(int id, AdminEpisodeForm form);
   Future<void> deleteEpisode(int id);
-  Future<void> uploadSeriesCover(int seriesId, File file);
-  Future<void> uploadEpisodeVideo(int episodeId, File file);
-  Future<void> uploadEpisodeSubtitle(int episodeId, File file);
-  Future<void> uploadEpisodeThumbnail(int episodeId, File file);
+  Future<void> uploadSeriesCover(
+    int seriesId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  });
+  Future<void> uploadEpisodeVideo(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  });
+  Future<void> uploadEpisodeSubtitle(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  });
+  Future<void> uploadEpisodeThumbnail(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  });
 }

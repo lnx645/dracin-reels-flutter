@@ -59,22 +59,54 @@ class AdminRepositoryImpl implements AdminRepository {
   }
 
   @override
-  Future<void> uploadSeriesCover(int seriesId, File file) async {
-    await _api.uploadFile('/admin/series/$seriesId/cover', file);
+  Future<void> uploadSeriesCover(
+    int seriesId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    await _api.uploadFile(
+      '/admin/series/$seriesId/cover',
+      file,
+      onProgress: onProgress,
+    );
   }
 
   @override
-  Future<void> uploadEpisodeVideo(int episodeId, File file) async {
-    await _api.uploadFile('/admin/episodes/$episodeId/video', file);
+  Future<void> uploadEpisodeVideo(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    await _api.uploadFile(
+      '/admin/episodes/$episodeId/video',
+      file,
+      onProgress: onProgress,
+    );
   }
 
   @override
-  Future<void> uploadEpisodeSubtitle(int episodeId, File file) async {
-    await _api.uploadFile('/admin/episodes/$episodeId/subtitle', file);
+  Future<void> uploadEpisodeSubtitle(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    await _api.uploadFile(
+      '/admin/episodes/$episodeId/subtitle',
+      file,
+      onProgress: onProgress,
+    );
   }
 
   @override
-  Future<void> uploadEpisodeThumbnail(int episodeId, File file) async {
-    await _api.uploadFile('/admin/episodes/$episodeId/thumbnail', file);
+  Future<void> uploadEpisodeThumbnail(
+    int episodeId,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    await _api.uploadFile(
+      '/admin/episodes/$episodeId/thumbnail',
+      file,
+      onProgress: onProgress,
+    );
   }
 }

@@ -7,10 +7,10 @@ import '../../../feed/domain/entities/episode.dart';
 import '../../../feed/presentation/bloc/feed_bloc.dart';
 import '../../../feed/presentation/bloc/feed_event.dart';
 import '../../../feed/presentation/bloc/feed_state.dart';
-import '../../../feed/presentation/widgets/episode_cover.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/domain/repositories/series_repository.dart';
 import '../../../series/presentation/bloc/series_bloc.dart';
+import '../widgets/video_player_area.dart';
 import '../../../wallet/domain/repositories/wallet_repository.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/widgets/comments_sheet.dart';
@@ -21,8 +21,10 @@ import '../../../wallet/presentation/widgets/comments_sheet.dart';
 /// Jalur yang sama dari semua tempat: feed, "Tonton Semua" (lewat detail
 /// series), detail series, Riwayat/Lanjutkan Nonton — semuanya membuka
 /// halaman ini dengan id episode API (`s{seriesId}e{episodeId}`).
-/// Video masih placeholder (gradasi + judul) sampai pemutar beneran
-/// dipasang — dinyatakan jujur di README, bukan diklaim memutar.
+/// Video diputar beneran dari `video_url` episode (file video langsung
+/// atau HLS) lewat VideoPlayerArea; episode terkunci tetap tidak memutar.
+/// Tautan halaman web (mis. halaman YouTube) tidak dapat diputar oleh
+/// pemutar ini — init gagal ditampilkan sebagai error asli + Coba Lagi.
 class PlayerPage extends StatefulWidget {
   const PlayerPage({required this.episodeId, this.seriesId = 1, super.key});
 
@@ -42,6 +44,10 @@ class _PlayerPageState extends State<PlayerPage> {
   late int _seriesId;
   bool _isPlaying = false;
 
+  /// Status putar yang diminta untuk area video (tombol Putar/Jeda di
+  /// bawah ikut status controller yang sebenarnya lewat callback).
+  final ValueNotifier<bool> _playRequest = ValueNotifier<bool>(false);
+
   int? _pendingUnlockId;
   int? _lastUnlockShown;
   String? _lastErrorShown;
@@ -54,6 +60,21 @@ class _PlayerPageState extends State<PlayerPage> {
     super.initState();
     _currentId = widget.episodeId;
     _seriesId = _parseSeriesId(widget.episodeId) ?? widget.seriesId;
+  }
+
+  @override
+  void dispose() {
+    _playRequest.dispose();
+    super.dispose();
+  }
+
+  /// Status putar dari controller video (bukan lagi bool UI semata):
+  /// label tombol Putar/Jeda mengikuti apa yang benar-benar terjadi.
+  void _onPlayingChanged(bool playing) {
+    if (!mounted || playing == _isPlaying) {
+      return;
+    }
+    setState(() => _isPlaying = playing);
   }
 
   /// Id `s{seriesId}e{episodeId}` → seriesId; `epN` lama → 1.
@@ -83,6 +104,56 @@ class _PlayerPageState extends State<PlayerPage> {
     return null;
   }
 
+  /// Id `s{seriesId}e{episodeId}` → episodeId API; `epN` lama → nomor N.
+  int? _parseApiEpisodeId(String id) {
+    final RegExpMatch? match = RegExp(r'^s\d+e(\d+)$').firstMatch(id);
+    if (match != null) {
+      return int.tryParse(match.group(1)!);
+    }
+    if (id.startsWith('ep')) {
+      return int.tryParse(id.substring(2));
+    }
+    return null;
+  }
+
+  /// Episode series aktif dari detail API: dedupe per id, urut per nomor.
+  /// Ini SATU-SATUNYA sumber daftar episode Player — tidak pernah dari
+  /// feed global (yang mencampur semua series) dan tidak pernah dari
+  /// cache lokal yang tidak ada di API.
+  List<SeriesEpisode> _sortedUniqueSeriesEpisodes(
+    List<SeriesEpisode> input,
+  ) {
+    final Map<int, SeriesEpisode> byId = <int, SeriesEpisode>{};
+    for (final SeriesEpisode item in input) {
+      byId[item.id] = item;
+    }
+    final List<SeriesEpisode> list = byId.values.toList()
+      ..sort((a, b) => a.number.compareTo(b.number));
+    return list;
+  }
+
+  /// Episode tampilan cadangan bila feed (yang bisa basi — dimuat sebelum
+  /// episode dibuat) belum memuat episode yang sudah ada di detail API.
+  /// Judul/deskripsi dari detail API, bukan karangan.
+  Episode _episodeFromDetail(SeriesEpisode detail, Series series) {
+    final int seriesId = detail.seriesId > 0 ? detail.seriesId : _seriesId;
+    return Episode(
+      id: 's$seriesId' 'e${detail.id}',
+      title: detail.title,
+      number: detail.number,
+      description: detail.description,
+      hashtags: series.genres
+          .map((genre) => '#${genre.name.replaceAll(' ', '')}')
+          .toList(),
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      gradient: const <int>[0xFF3B1D5A, 0xFF0B0E14],
+      seriesId: seriesId,
+      apiEpisodeId: detail.id,
+    );
+  }
+
   /// Tercatat ke Riwayat + WatchProgress (satu sumber data dengan
   /// "Lanjutkan Nonton"): sekali per episode per sesi player.
   /// Judul series dari detail API (bukan default karangan).
@@ -110,6 +181,8 @@ class _PlayerPageState extends State<PlayerPage> {
       _seriesId = _parseSeriesId(episodeId) ?? _seriesId;
       _isPlaying = false;
     });
+    // Controller baru tidak boleh auto-memutar episode pengganti.
+    _playRequest.value = false;
   }
 
   Future<void> _toggleLike(Episode episode) async {
@@ -192,29 +265,27 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  void _showEpisodeList(
-    List<Episode> episodes,
-    Map<int, SeriesEpisode> detailByNumber,
-  ) {
+  /// Bottom sheet daftar episode — HANYA episode series yang sedang
+  /// diputar (dari detail API, sudah dedupe + urut). Tidak pernah
+  /// mencampur series lain, tidak pernah dari feed global.
+  void _showEpisodeList(List<SeriesEpisode> seriesEpisodes, int seriesId) {
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) {
         return ListView(
           shrinkWrap: true,
-          children: episodes.map((episode) {
-            final detail = detailByNumber[episode.number];
-            final locked = detail?.locked ?? false;
+          children: seriesEpisodes.map((detail) {
+            final locked = detail.locked;
             return ListTile(
               leading: locked
                   ? const Icon(Icons.lock, size: 20)
-                  : CircleAvatar(child: Text('${episode.number}')),
-              title: Text('Episode ${episode.number} - ${episode.title}'),
-              subtitle: locked && detail != null
-                  ? Text('${detail.coinPrice} koin')
-                  : null,
+                  : CircleAvatar(child: Text('${detail.number}')),
+              title: Text('Episode ${detail.number} - ${detail.title}'),
+              subtitle:
+                  locked ? Text('${detail.coinPrice} koin') : null,
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _switchTo(episode.id);
+                _switchTo('s$seriesId' 'e${detail.id}');
               },
             );
           }).toList(),
@@ -362,15 +433,46 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  Widget _videoArea(Episode episode, bool locked, SeriesEpisode? lockedDetail) {
+  Widget _videoArea(
+    bool locked,
+    SeriesEpisode? lockedDetail,
+    SeriesEpisode? detail,
+    bool detailLoading,
+  ) {
+    // ATURAN KEJUJURAN STATE (cacat kelas terburuk: ikon "memutar" tanpa
+    // video jalan): area video TIDAK PERNAH menampilkan gradasi statis
+    // berikon putar sebagai "sedang memutar".
+    // - Terkunci → hitam + gembok (video tidak pernah di-init).
+    // - Detail ada → pemutar beneran (loading = spinner, gagal = error).
+    // - Detail masih dimuat → spinner, bukan sampul.
+    // - Detail sudah dimuat tapi episode tidak ada → state jujur
+    //   "Video belum tersedia" dari VideoPlayerArea.
+    final Widget video;
+    if (lockedDetail != null) {
+      video = Container(color: Colors.black);
+    } else if (detail != null) {
+      video = VideoPlayerArea(
+        key: ValueKey<String>('video-${detail.id}'),
+        videoUrl: detail.videoUrl,
+        playRequest: _playRequest,
+        onPlayingChanged: _onPlayingChanged,
+      );
+    } else if (detailLoading) {
+      video = Container(
+        color: Colors.black,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    } else {
+      video = VideoPlayerArea(
+        key: const ValueKey<String>('video-missing'),
+        videoUrl: '',
+        playRequest: _playRequest,
+        onPlayingChanged: _onPlayingChanged,
+      );
+    }
     return Stack(
       children: <Widget>[
-        Positioned.fill(
-          child: EpisodeCover(
-            episode: episode,
-            isPlaying: _isPlaying && !locked,
-          ),
-        ),
+        Positioned.fill(child: video),
         if (lockedDetail != null)
           Positioned.fill(child: _lockOverlay(lockedDetail)),
       ],
@@ -379,12 +481,17 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Widget _infoSection(
     Episode episode,
-    Episode? previous,
-    Episode? next,
+    String? previousId,
+    String? nextId,
     bool locked,
-    List<Episode> episodes,
-    Map<int, SeriesEpisode> detailByNumber,
+    List<SeriesEpisode> seriesEpisodes,
+    int seriesId,
+    SeriesEpisode? detail,
   ) {
+    // Tombol Putar hanya bermakna bila ada video yang bisa diputar.
+    final canPlay = !locked &&
+        detail != null &&
+        detail.videoUrl.trim().isNotEmpty;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -423,30 +530,114 @@ class _PlayerPageState extends State<PlayerPage> {
           Row(
             children: <Widget>[
               Expanded(
-                child: OutlinedButton(
-                  onPressed:
-                      previous == null ? null : () => _switchTo(previous.id),
-                  child: const Text('Sebelumnya'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: locked
-                      ? null
-                      : () => setState(() => _isPlaying = !_isPlaying),
-                  child: Text(
-                    locked
-                        ? 'Terkunci'
-                        : (_isPlaying ? 'Jeda' : 'Putar'),
+                child: Tooltip(
+                  message: 'Sebelumnya',
+                  child: OutlinedButton(
+                    style: const ButtonStyle(
+                      padding: WidgetStatePropertyAll<EdgeInsets>(
+                        EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    onPressed: previousId == null
+                        ? null
+                        : () => _switchTo(previousId),
+                    // Ikon + label satu baris (FittedBox mengecilkan
+                    // label, bukan wrap tengah kata). Ikon tidak pernah
+                    // mengecil — label yang menyesuaikan.
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        const Icon(Icons.skip_previous, size: 20),
+                        const SizedBox(width: 4),
+                        const Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Sebelumnya',
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: next == null ? null : () => _switchTo(next.id),
-                  child: const Text('Berikutnya'),
+                child: Tooltip(
+                  message: locked
+                      ? 'Terkunci'
+                      : (_isPlaying ? 'Jeda' : 'Putar'),
+                  child: ElevatedButton(
+                    style: const ButtonStyle(
+                      padding: WidgetStatePropertyAll<EdgeInsets>(
+                        EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    onPressed: !canPlay
+                        ? null
+                        : () => _playRequest.value = !_isPlaying,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Icon(
+                          locked
+                              ? Icons.lock
+                              : (_isPlaying
+                                  ? Icons.pause
+                                  : Icons.play_arrow),
+                          size: 22,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              locked
+                                  ? 'Terkunci'
+                                  : (_isPlaying ? 'Jeda' : 'Putar'),
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Tooltip(
+                  message: 'Berikutnya',
+                  child: OutlinedButton(
+                    style: const ButtonStyle(
+                      padding: WidgetStatePropertyAll<EdgeInsets>(
+                        EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                    onPressed:
+                        nextId == null ? null : () => _switchTo(nextId),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        const Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Berikutnya',
+                              maxLines: 1,
+                              softWrap: false,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.skip_next, size: 20),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -487,14 +678,14 @@ class _PlayerPageState extends State<PlayerPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: () => _showEpisodeList(episodes, detailByNumber),
+              onPressed: () => _showEpisodeList(seriesEpisodes, seriesId),
               child: const Text('Daftar Episode'),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Video belum memutar (UI saja). Area video di atas masih '
-            'placeholder sampai pemutar beneran dipasang.',
+            'Video diputar dari tautan episode (file video langsung '
+            'atau HLS). Tautan halaman web tidak dapat diputar di sini.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -543,20 +734,11 @@ class _PlayerPageState extends State<PlayerPage> {
         },
         child: BlocBuilder<FeedBloc, FeedState>(
           builder: (context, feedState) {
-            final episodes = _sortedEpisodes(feedState.episodes);
-            final episode = _currentEpisode(episodes);
-            if (episode == null) {
-              return Scaffold(
-                appBar: AppBar(title: const Text('Player')),
-                body: const Center(
-                  child: Text('Episode tidak ditemukan.'),
-                ),
-              );
-            }
-            final index = episodes.indexOf(episode);
-            final previous = index > 0 ? episodes[index - 1] : null;
-            final next =
-                index < episodes.length - 1 ? episodes[index + 1] : null;
+            // Episode feed hanya untuk data tampilan (suka/simpan sesi).
+            // Daftar + navigasi episode TIDAK dari sini: feed bersifat
+            // global (semua series) dan bisa basi.
+            final feedEpisode =
+                _currentEpisode(_sortedEpisodes(feedState.episodes));
             return BlocBuilder<SeriesDetailBloc, SeriesDetailState>(
               builder: (context, detailState) {
                 // Status kunci tidak bisa diverifikasi bila detail gagal
@@ -566,7 +748,9 @@ class _PlayerPageState extends State<PlayerPage> {
                     detailState.detail == null) {
                   return Scaffold(
                     appBar: AppBar(
-                      title: Text('Episode ${episode.number}'),
+                      title: Text(
+                        'Episode ${feedEpisode?.number ?? ''}',
+                      ),
                     ),
                     body: Center(
                       child: Padding(
@@ -601,11 +785,54 @@ class _PlayerPageState extends State<PlayerPage> {
                       in detailState.detail?.episodes ?? <SeriesEpisode>[])
                     item.number: item,
                 };
+                // Daftar episode series aktif — dari detail API saja.
+                final seriesEpisodes = _sortedUniqueSeriesEpisodes(
+                  detailState.detail?.episodes ?? <SeriesEpisode>[],
+                );
+                final apiId = _parseApiEpisodeId(_currentId);
+                SeriesEpisode? currentDetail;
+                for (final item in seriesEpisodes) {
+                  if (apiId != null && item.id == apiId) {
+                    currentDetail = item;
+                    break;
+                  }
+                }
+                final series = detailState.detail?.series;
+                final episode = feedEpisode ??
+                    (currentDetail != null && series != null
+                        ? _episodeFromDetail(currentDetail, series)
+                        : null);
+                if (episode == null) {
+                  return Scaffold(
+                    appBar: AppBar(title: const Text('Player')),
+                    body: const Center(
+                      child: Text('Episode tidak ditemukan.'),
+                    ),
+                  );
+                }
                 final detail = detailByNumber[episode.number];
                 final locked = detail != null &&
                     detail.locked &&
                     !wallet.vip.isActive;
                 final lockedDetail = locked ? detail : null;
+                // Navigasi Sebelumnya/Berikutnya HANYA di dalam series
+                // aktif (bukan feed global).
+                final currentDetailId = currentDetail?.id;
+                final currentIndex = currentDetailId == null
+                    ? -1
+                    : seriesEpisodes.indexWhere(
+                        (item) => item.id == currentDetailId,
+                      );
+                final String? previousId = currentIndex > 0
+                    ? 's$_seriesId'
+                        'e${seriesEpisodes[currentIndex - 1].id}'
+                    : null;
+                final String? nextId =
+                    currentIndex >= 0 &&
+                            currentIndex < seriesEpisodes.length - 1
+                        ? 's$_seriesId'
+                            'e${seriesEpisodes[currentIndex + 1].id}'
+                        : null;
                 // Tercatat ke riwayat saat episode terbuka untuk ditonton
                 // (bukan saat masih terkunci di balik gembok) dan hanya
                 // bila detail series dari API tersedia (judul series
@@ -628,20 +855,23 @@ class _PlayerPageState extends State<PlayerPage> {
                         Expanded(
                           flex: 5,
                           child: _videoArea(
-                            episode,
                             locked,
                             lockedDetail,
+                            detail,
+                            detailState.detail == null &&
+                                detailState.errorMessage == null,
                           ),
                         ),
                         Expanded(
                           flex: 4,
                           child: _infoSection(
                             episode,
-                            previous,
-                            next,
+                            previousId,
+                            nextId,
                             locked,
-                            episodes,
-                            detailByNumber,
+                            seriesEpisodes,
+                            _seriesId,
+                            detail,
                           ),
                         ),
                       ],

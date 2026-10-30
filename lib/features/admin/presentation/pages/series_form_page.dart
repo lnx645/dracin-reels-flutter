@@ -8,6 +8,7 @@ import '../../../../core/api/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/admin_content.dart';
 import '../../domain/repositories/admin_repository.dart';
+import '../widgets/upload_progress_dialog.dart';
 
 /// Formulir tambah/edit series + upload cover (admin).
 /// Gagal simpan/upload menampilkan pesan jelas — tidak pernah sukses palsu.
@@ -76,6 +77,26 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
     }
   }
 
+  /// Satu upload dengan dialog progress nyata ("X / Y MB" + persen +
+  /// bar). Dialog selalu ditutup (finally) sebelum sukses/error
+  /// dilaporkan lewat jalur normal formulir.
+  Future<void> _uploadWithProgress(
+    String title,
+    Future<void> Function(void Function(int sent, int total) onProgress)
+        task,
+  ) async {
+    final progress = UploadProgress();
+    final dialog = UploadProgressDialog(progress);
+    dialog.show(context, title);
+    try {
+      await task(progress.update);
+    } finally {
+      if (mounted) {
+        dialog.close(context);
+      }
+    }
+  }
+
   Future<void> _save() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
@@ -116,9 +137,13 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
       }
       final coverFile = _coverFile;
       if (coverFile != null && coverFile.path != null) {
-        await repository.uploadSeriesCover(
-          seriesId,
-          File(coverFile.path!),
+        await _uploadWithProgress(
+          'Mengunggah cover…',
+          (onProgress) => repository.uploadSeriesCover(
+            seriesId,
+            File(coverFile.path!),
+            onProgress: onProgress,
+          ),
         );
       }
       if (!mounted) {

@@ -6,8 +6,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../player/presentation/widgets/video_player_area.dart';
 import '../../domain/entities/admin_content.dart';
 import '../../domain/repositories/admin_repository.dart';
+import '../widgets/upload_progress_dialog.dart';
 
 enum VideoSource { upload, link }
 
@@ -47,6 +49,18 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
   bool _saving = false;
   String? _error;
 
+  /// Path upload yang sedang dipakai episode ini (dari `video_url` lama
+  /// yang BUKAN link http — mis. `media/episodes/xxx.mp4`). Hanya info
+  /// tampilan; nilai simpan tetap dibaca dari data lama saat _save.
+  String _savedUploadPath = '';
+
+  /// Pratinjau video: file lokal yang baru dipilih, atau URL tersimpan.
+  /// Diperbarui tombol "Perbarui Pratinjau" (bukan tiap ketikan, supaya
+  /// pemutar tidak init ulang terus-menerus).
+  File? _previewFile;
+  String? _previewUrl;
+  final ValueNotifier<bool> _previewPlayRequest = ValueNotifier<bool>(false);
+
   bool get _isEdit => widget.existing != null;
 
   @override
@@ -66,9 +80,23 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
           : '',
     );
     final videoUrl = existing?['video_url'];
-    _videoUrlController = TextEditingController(
-      text: videoUrl is String ? videoUrl : '',
-    );
+    // Toggle HARUS diturunkan dari video_url yang sebenarnya — inilah
+    // cacat lama: semua video_url non-kosong dipaksa jadi "Link", padahal
+    // path upload (media/...) bukan link dan tidak boleh tampil di kolom
+    // link eksternal.
+    if (videoUrl is String && videoUrl.isNotEmpty) {
+      if (_isHttpUrl(videoUrl)) {
+        _source = VideoSource.link;
+        _videoUrlController = TextEditingController(text: videoUrl);
+      } else {
+        _source = VideoSource.upload;
+        _videoUrlController = TextEditingController(text: '');
+        _savedUploadPath = videoUrl;
+      }
+      _previewUrl = videoUrl;
+    } else {
+      _videoUrlController = TextEditingController(text: '');
+    }
     final price = existing?['coin_price'];
     _priceController = TextEditingController(
       text: price is int ? '$price' : '0',
@@ -76,9 +104,6 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
     final status = existing?['status'];
     if (status is String && (status == 'published' || status == 'draft')) {
       _status = status;
-    }
-    if (videoUrl is String && videoUrl.isNotEmpty) {
-      _source = VideoSource.link;
     }
   }
 
@@ -89,6 +114,7 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
     _descriptionController.dispose();
     _videoUrlController.dispose();
     _priceController.dispose();
+    _previewPlayRequest.dispose();
     super.dispose();
   }
 
@@ -104,6 +130,47 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
 
   bool _isHttpUrl(String value) {
     return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  /// Pratinjau dihitung dari input saat ini (file baru > link ketikan >
+  /// video tersimpan). Dipanggil tombol "Perbarui Pratinjau" — bukan
+  /// tiap ketikan, supaya pemutar tidak init ulang terus-menerus.
+  void _refreshPreview() {
+    setState(() {
+      if (_videoFile != null && _videoFile!.path != null) {
+        _previewFile = File(_videoFile!.path!);
+        _previewUrl = null;
+      } else if (_source == VideoSource.link) {
+        _previewFile = null;
+        final link = _videoUrlController.text.trim();
+        _previewUrl = link.isEmpty ? null : link;
+      } else {
+        _previewFile = null;
+        final saved = widget.existing?['video_url'];
+        _previewUrl = saved is String && saved.isNotEmpty ? saved : null;
+      }
+      _previewPlayRequest.value = false;
+    });
+  }
+
+  /// Satu upload dengan dialog progress nyata ("X / Y MB" + persen +
+  /// bar). Dialog selalu ditutup (finally) sebelum sukses/error
+  /// dilaporkan lewat jalur normal formulir.
+  Future<void> _uploadWithProgress(
+    String title,
+    Future<void> Function(void Function(int sent, int total) onProgress)
+        task,
+  ) async {
+    final progress = UploadProgress();
+    final dialog = UploadProgressDialog(progress);
+    dialog.show(context, title);
+    try {
+      await task(progress.update);
+    } finally {
+      if (mounted) {
+        dialog.close(context);
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -181,23 +248,35 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
       if (_source == VideoSource.upload &&
           videoFile != null &&
           videoFile.path != null) {
-        await repository.uploadEpisodeVideo(
-          episodeId,
-          File(videoFile.path!),
+        await _uploadWithProgress(
+          'Mengunggah video…',
+          (onProgress) => repository.uploadEpisodeVideo(
+            episodeId,
+            File(videoFile.path!),
+            onProgress: onProgress,
+          ),
         );
       }
       final subtitleFile = _subtitleFile;
       if (subtitleFile != null && subtitleFile.path != null) {
-        await repository.uploadEpisodeSubtitle(
-          episodeId,
-          File(subtitleFile.path!),
+        await _uploadWithProgress(
+          'Mengunggah subtitle…',
+          (onProgress) => repository.uploadEpisodeSubtitle(
+            episodeId,
+            File(subtitleFile.path!),
+            onProgress: onProgress,
+          ),
         );
       }
       final thumbnailFile = _thumbnailFile;
       if (thumbnailFile != null && thumbnailFile.path != null) {
-        await repository.uploadEpisodeThumbnail(
-          episodeId,
-          File(thumbnailFile.path!),
+        await _uploadWithProgress(
+          'Mengunggah thumbnail…',
+          (onProgress) => repository.uploadEpisodeThumbnail(
+            episodeId,
+            File(thumbnailFile.path!),
+            onProgress: onProgress,
+          ),
         );
       }
       if (!mounted) {
@@ -302,7 +381,15 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                 'Video',
                 _videoFile,
                 () => _pickFile(
-                  (file) => setState(() => _videoFile = file),
+                  (file) => setState(() {
+                    _videoFile = file;
+                    _previewFile = file != null && file.path != null
+                        ? File(file.path!)
+                        : null;
+                    if (file != null) {
+                      _previewUrl = null;
+                    }
+                  }),
                   FileType.video,
                 ),
               ),
@@ -316,16 +403,66 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
-              const Text(
-                'Bila link sudah diisi (mode Link), upload tidak wajib. '
-                'Bila keduanya diisi, file upload yang dipakai.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
+              if (_savedUploadPath.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  'File saat ini: $_savedUploadPath',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+            const SizedBox(height: 16),
+            Text('Pratinjau Video', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (_previewFile != null ||
+                (_previewUrl != null && _previewUrl!.isNotEmpty))
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: VideoPlayerArea(
+                  key: ValueKey<String>(
+                    'preview-${_previewFile?.path ?? _previewUrl}',
+                  ),
+                  videoUrl: _previewUrl ?? '',
+                  localFile: _previewFile,
+                  playRequest: _previewPlayRequest,
+                  onPlayingChanged: (_) {},
+                ),
+              )
+            else
+              Container(
+                height: 120,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Belum ada video untuk dipratinjau.',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
-            ],
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _refreshPreview,
+              child: const Text('Perbarui Pratinjau'),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Pratinjau memakai pemutar yang sama dengan halaman Player. '
+              'Pastikan video berputar sebelum menekan Simpan.',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
             const SizedBox(height: 12),
             _fileRow(
               'Subtitle',

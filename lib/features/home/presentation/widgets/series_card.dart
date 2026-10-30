@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../../series/domain/entities/series.dart';
 
 /// Kartu series — desain yang sama dipakai di Beranda, halaman
-/// "Tonton Semua", dan strip series Jelajahi: cover gradasi, judul,
-/// deskripsi 2 baris, tombol selebar kartu.
+/// "Tonton Semua", dan strip series Jelajahi: cover (foto dari API bila
+/// ada, gradasi bila tidak ada/gagal), judul, deskripsi 2 baris,
+/// tombol selebar kartu.
 class SeriesCard extends StatelessWidget {
   const SeriesCard({required this.series, required this.onOpen, super.key});
 
@@ -14,11 +16,13 @@ class SeriesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final coverUrl = resolveMediaUrl(series.coverUrl);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Container(
           height: 110,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
@@ -36,6 +40,34 @@ class SeriesCard extends StatelessWidget {
           ),
           child: Stack(
             children: <Widget>[
+              if (coverUrl.isNotEmpty)
+                Positioned.fill(
+                  child: Image.network(
+                    coverUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ),
+              if (coverUrl.isNotEmpty)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 56,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          Color(0x00000000),
+                          Color(0xAA000000),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               const Center(
                 child: Icon(Icons.play_arrow, size: 36, color: Colors.white),
               ),
@@ -112,9 +144,11 @@ class SeriesMiniCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final coverUrl = resolveMediaUrl(series.coverUrl);
     return GestureDetector(
       onTap: onOpen,
       child: Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -125,6 +159,34 @@ class SeriesMiniCard extends StatelessWidget {
         ),
         child: Stack(
           children: <Widget>[
+            if (coverUrl.isNotEmpty)
+              Positioned.fill(
+                child: Image.network(
+                  coverUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
+            if (coverUrl.isNotEmpty)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 72,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        Color(0x00000000),
+                        Color(0xAA000000),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             const Center(
               child: Icon(Icons.play_arrow, size: 32, color: Colors.white),
             ),

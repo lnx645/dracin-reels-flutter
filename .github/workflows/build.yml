@@ -57,11 +57,11 @@ jobs:
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
           CODE=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f2)
           TAG="v$VERSION"
-          NOTES="Dracin Reels Flutter $TAG - updater semi-otomatis dari GitHub Release (cek latar belakang, unduh APK, pasang lewat installer sistem satu ketukan).
+          NOTES="Dracin Reels Flutter $TAG - pemutar video beneran di halaman Player + pratinjau video di formulir episode + progress upload nyata (X / Y MB) + daftar episode Player hanya series aktif + label versi di Profil.
 
           versionCode: $CODE
 
-          Video belum memutar; pembayaran/iklan beneran belum ada."
+          Pembayaran/iklan beneran belum ada."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dracin-reels.apk --clobber
             gh release edit "$TAG" --notes "$NOTES"

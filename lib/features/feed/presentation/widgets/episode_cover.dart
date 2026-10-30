@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/episode.dart';
 
 /// Placeholder area video: gradasi + judul + ikon putar/jeda.
-/// VIDEO BELUM MEMUTAR — ini UI saja, dinyatakan jujur di README.
+/// Dipakai sebagai latar saat video belum di-init (loading) dan di balik
+/// overlay gembok episode terkunci — pemutaran beneran ada di
+/// VideoPlayerArea, bukan di sini.
 class EpisodeCover extends StatelessWidget {
   const EpisodeCover({
     required this.episode,

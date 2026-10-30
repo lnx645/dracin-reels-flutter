@@ -12,6 +12,28 @@ class ApiConfig {
       'http://103.147.33.11:8095/dracin-api';
 }
 
+/// Mengubah URL media dari API menjadi URL yang bisa dimuat aplikasi.
+///
+/// - `http(s)` absolut dipakai apa adanya.
+/// - Path relatif (mis. `media/series/xxx.jpg` dari upload admin, atau
+///   `media/episodes/xxx.mp4`) diberi prefix basis media proxy
+///   (`/dracin-api/`), BUKAN basis API (`/api/v1`) — sudah diverifikasi:
+///   GET `.../dracin-api/media/...` mengembalikan 200, sedangkan basis
+///   `/api/v1` untuk file media adalah salah.
+/// - Kosong → string kosong (pemanggil menampilkan placeholder jujur,
+///   bukan kotak rusak).
+String resolveMediaUrl(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) {
+    return '';
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  final path = trimmed.startsWith('/') ? trimmed.substring(1) : trimmed;
+  return '${ApiConfig.mediaBase}/$path';
+}
+
 /// Error API dengan pesan Bahasa Indonesia dari server (bila ada).
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode});
@@ -179,7 +201,13 @@ class ApiClient {
 
   /// Upload multipart khusus admin (field `file`, sesuai kontrak backend).
   /// Mengembalikan data JSON (mis. path media yang tersimpan).
-  Future<dynamic> uploadFile(String path, File file) async {
+  /// [onProgress] dipanggil dari stream upload yang sebenarnya (byte file
+  /// terkirim / total byte file, per chunk) — bukan animasi palsu.
+  Future<dynamic> uploadFile(
+    String path,
+    File file, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     try {
       final request = http.MultipartRequest(
         'POST',
@@ -191,8 +219,16 @@ class ApiClient {
       if (token != null && token.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $token';
       }
+      final length = await file.length();
+      var sent = 0;
+      final counted = file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(sent, length);
+        return chunk;
+      });
+      final filename = file.path.split('/').last;
       request.files.add(
-        await http.MultipartFile.fromPath('file', file.path),
+        http.MultipartFile('file', counted, length, filename: filename),
       );
       final streamed = await request.send().timeout(
             const Duration(minutes: 5),
