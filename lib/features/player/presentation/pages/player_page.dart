@@ -54,8 +54,9 @@ class _PlayerPageState extends State<PlayerPage> {
   late int _seriesId;
   bool _isPlaying = false;
 
-  /// Status putar yang diminta untuk area video (ketuk video memutar /
-  /// menjeda lewat controller; status tombol mengikuti controller).
+  /// Status putar yang diminta untuk area video (tombol tengah
+  /// memutar/menjeda lewat controller; status tombol mengikuti
+  /// controller — ketuk area video TIDAK PERNAH mengubah ini).
   final ValueNotifier<bool> _playRequest = ValueNotifier<bool>(false);
 
   /// Permintaan seek dari Slider progress bawah (diteruskan ke area
@@ -131,13 +132,17 @@ class _PlayerPageState extends State<PlayerPage> {
   ///   "Layar Penuh" di tengah bawah video, rel ikon rapat di kanan
   ///   video (tengah vertikal), judul + deskripsi, baris seek,
   ///   baris Total).
-  ///   Play/pause HANYA lewat ketuk video (overlay play besar saat
-  ///   pause); pindah episode HANYA lewat Daftar Episode (baris Total
+  ///   Putar/jeda HANYA lewat TOMBOL TENGAH (overlay play saat jeda,
+  ///   tombol jeda saat diputar); ketuk area video TIDAK PERNAH
+  ///   memutar/menjeda — ketuk hanya menampilkan/menyembunyikan
+  ///   chrome. Pindah episode HANYA lewat Daftar Episode (baris Total
   ///   / menu "...") — baris tombol Sebelumnya/Putar/Berikutnya
   ///   DIHAPUS atas perintah uwa.
   /// - PLAY = imersi: chrome menghilang (fade/collapse), tersisa video
-  ///   + subtitle + progress tipis. Ketuk video saat play → pause +
-  ///   chrome kembali; ketuk saat pause → play + chrome hilang
+  ///   + subtitle + progress tipis. Ketuk video saat play → chrome
+  ///   muncul (video TETAP diputar); ketuk tombol tengah → jeda +
+  ///   chrome kembali; ketuk saat pause → chrome muncul/hilang saja
+  ///   (status tetap jeda). Chrome yang muncul saat memutar hilang
   ///   otomatis setelah ~3 detik (timer di-reset tiap interaksi).
   /// - AUTO-NEXT: video selesai → episode berikutnya dalam series
   ///   yang sama otomatis diputar; episode terkunci berikutnya tetap
@@ -290,7 +295,7 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     setState(() => _isPlaying = playing);
     // CERMIN status putar: _playRequest SELALU sama dengan status
-    // nyata (ketuk video = play/pause langsung di controller, bukan
+    // nyata (tombol tengah = play/pause langsung di controller, bukan
     // lewat notifier — tanpa cermin ini, controller baru hasil
     // re-init akan membaca playRequest basi (false) dan diam dalam
     // keadaan jeda walau sebelumnya sedang diputar — persis keluhan
@@ -312,6 +317,21 @@ class _PlayerPageState extends State<PlayerPage> {
       if (!_chromeVisible) {
         setState(() => _chromeVisible = true);
       }
+    }
+  }
+
+  /// Ketuk area video (aturan baru uwa, MENGGANTIKAN "ketuk =
+  /// putar/jeda"): HANYA menampilkan/menyembunyikan chrome — TIDAK
+  /// PERNAH mengubah status putar. Putar/jeda SATU-SATUNYA lewat
+  /// tombol tengah di area video. Chrome yang dimunculkan saat
+  /// memutar auto-hide lagi sesudah 3 detik; saat jeda chrome yang
+  /// dimunculkan menetap (pengguna butuh tombolnya).
+  void _toggleChrome() {
+    setState(() => _chromeVisible = !_chromeVisible);
+    if (_chromeVisible) {
+      _resetHideTimer();
+    } else {
+      _hideTimer?.cancel();
     }
   }
 
@@ -1388,6 +1408,13 @@ class _PlayerPageState extends State<PlayerPage> {
         // menyentuh controller, key, atau playRequest.
         showControls: false,
         thinProgressOnly: _fullscreen,
+        // Aturan ketuk baru: area video hanya toggle chrome (tidak
+        // pernah putar/jeda); tombol tengah area = satu-satunya
+        // putar/jeda; tombol tengah tampil hanya bila chrome
+        // terlihat (saat jeda, _onPlayingChanged memaksa chrome
+        // terlihat — jadi tombol play selalu tersedia saat jeda).
+        onBackgroundTap: _toggleChrome,
+        showCenterButton: _chromeVisible,
         onPositionChanged: _onVideoPosition,
         onDurationChanged: _onVideoDuration,
         onAspectRatioChanged: _onVideoAspectRatio,
@@ -1574,8 +1601,9 @@ class _PlayerPageState extends State<PlayerPage> {
   /// judul, deskripsi 1 baris + chevron expand, baris seek tipis
   /// NYATA (posisi/durasi controller), baris Total. Baris tombol
   /// Sebelumnya/Putar/
-  /// Berikutnya DIHAPUS (perintah uwa: play/pause hanya ketuk video,
-  /// pindah episode hanya lewat Daftar Episode). Catatan penjelasan
+  /// Berikutnya DIHAPUS (perintah uwa: play/pause hanya tombol
+  /// tengah, ketuk area video hanya tampil/sembunyi chrome; pindah
+  /// episode hanya lewat Daftar Episode). Catatan penjelasan
   /// permanen DIHAPUS — hanya tampil di error state area video.
   Widget _infoSection(
     Episode episode,
