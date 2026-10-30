@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/domain/repositories/series_repository.dart';
@@ -116,92 +117,36 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Riwayat Tonton')),
+      appBar: const DracinAppBar(title: 'Riwayat Tonton'),
       body: SafeArea(
         child: BlocBuilder<WalletBloc, WalletState>(
           builder: (context, state) {
             final history = state.historyItems;
             if (state.errorMessage != null) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const Icon(Icons.cloud_off, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        state.errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => context
-                            .read<WalletBloc>()
-                            .add(const WalletRefreshed()),
-                        child: const Text('Coba Lagi'),
-                      ),
-                    ],
-                  ),
-                ),
+              return DracinErrorState(
+                message: state.errorMessage!,
+                onRetry: () => context
+                    .read<WalletBloc>()
+                    .add(const WalletRefreshed()),
               );
             }
             if (!state.loggedIn) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const Icon(Icons.history, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Masuk untuk melihat riwayat',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Riwayat tonton tersimpan di server untuk akun '
-                        'Anda.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.of(context).pushNamed('/login');
-                        },
-                        child: const Text('Masuk'),
-                      ),
-                    ],
-                  ),
-                ),
+              return DracinEmptyState(
+                icon: Icons.history,
+                message: 'Masuk untuk melihat riwayat.\n'
+                    'Riwayat tonton tersimpan di server untuk akun Anda.',
+                actionLabel: 'Masuk',
+                onAction: () {
+                  Navigator.of(context).pushNamed('/login');
+                },
               );
             }
             if (history.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const Icon(Icons.history, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Belum ada riwayat',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Episode yang Anda buka akan tercatat di sini '
-                        'secara otomatis.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
+              return const DracinEmptyState(
+                icon: Icons.history,
+                message: 'Belum ada riwayat.\n'
+                    'Episode yang Anda buka akan tercatat di sini '
+                    'secara otomatis.',
               );
             }
             return ListView(
@@ -220,7 +165,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 Text('Belum Ditonton', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 12),
                 if (_loadingUnwatched)
-                  const Center(child: CircularProgressIndicator())
+                  const DracinRowSkeleton()
                 else if (_unwatched.isEmpty)
                   const Text(
                     'Semua episode series yang ditonton sudah habis.',
@@ -247,9 +192,8 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                 const SizedBox(height: 16),
                 Text(
-                  'Riwayat dari server (akun Anda). Video belum '
-                  'memutar — posisi lanjut beneran aktif saat pemutar '
-                  'dipasang.',
+                  'Riwayat dari server (akun Anda). Ketuk episode '
+                  'untuk melanjutkan dari posisi tersimpan.',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -275,38 +219,46 @@ class _HistoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ListTile(
-        leading: Container(
-          width: 48,
-          height: 64,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[Color(0xFF3B1D5A), Color(0xFF0B0E14)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.play_arrow, color: Colors.white),
-        ),
-        title: Text(
-          title,
-          style: theme.textTheme.titleSmall,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DracinCard(
         onTap: onTap,
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 48,
+              height: 64,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[Color(0xFF3B1D5A), Color(0xFF0B0E14)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.play_arrow, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

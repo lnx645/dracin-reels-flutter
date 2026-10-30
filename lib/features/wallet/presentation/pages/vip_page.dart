@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/session/session_cubit.dart';
@@ -41,7 +43,7 @@ class _VipPageState extends State<VipPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('VIP')),
+        appBar: const DracinAppBar(title: 'VIP'),
         body: SafeArea(
           child: BlocBuilder<WalletBloc, WalletState>(
             builder: (context, state) {
@@ -120,7 +122,8 @@ class _VipPageState extends State<VipPage> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          ElevatedButton(
+                          DracinButton(
+                            label: 'Klaim',
                             onPressed: state.isLoading
                                 ? null
                                 : () async {
@@ -136,7 +139,6 @@ class _VipPageState extends State<VipPage> {
                                           WalletVipClaimRequested(plan.$1),
                                         );
                                   },
-                            child: const Text('Klaim'),
                           ),
                         ],
                       ),

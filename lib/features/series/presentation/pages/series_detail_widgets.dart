@@ -82,31 +82,34 @@ class SeriesCoverHeader extends StatelessWidget {
                 ),
               ),
             ),
-          Positioned(
-            top: 12,
-            right: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.star, size: 14, color: Colors.amber),
-                  const SizedBox(width: 4),
-                  Text(
-                    series.rating.toStringAsFixed(1),
-                    style: theme.textTheme.labelMedium,
-                  ),
-                ],
+          // Badge rating: tampil hanya bila ada nilai (> 0). Nilai 0 =
+          // belum ada data rating — menampilkan "0.0" menyesatkan.
+          if (series.rating > 0)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(Icons.star, size: 14, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                      series.rating.toStringAsFixed(1),
+                      style: theme.textTheme.labelMedium,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           Positioned(
             left: 16,
             right: 16,
@@ -221,11 +224,15 @@ class EpisodeRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      durationLabel,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    // Durasi 0 = tidak diketahui (link eksternal tanpa
+                    // probe): disembunyikan, bukan "0:00".
+                    if (durationLabel.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        durationLabel,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -12,6 +12,7 @@ class Episode {
     required this.shares,
     required this.gradient,
     this.seriesId = 0,
+    this.seriesTitle = '',
     this.apiEpisodeId = 0,
     this.isLiked = false,
     this.isBookmarked = false,
@@ -37,6 +38,10 @@ class Episode {
 
   /// Id series API pemilik episode ini (0 = tidak diketahui).
   final int seriesId;
+
+  /// Judul series pemilik ('' bila tidak diketahui — dipakai teks
+  /// bagikan; tidak pernah dikarang dari sumber lain).
+  final String seriesTitle;
 
   /// Id episode di API (0 = tidak diketahui; dipakai komentar/suka/
   /// unlock/progress — bukan nomor urut dalam series).
@@ -77,6 +82,7 @@ class Episode {
       shares: shares,
       gradient: gradient,
       seriesId: seriesId,
+      seriesTitle: seriesTitle,
       apiEpisodeId: apiEpisodeId,
       isLiked: isLiked ?? this.isLiked,
       isBookmarked: isBookmarked ?? this.isBookmarked,

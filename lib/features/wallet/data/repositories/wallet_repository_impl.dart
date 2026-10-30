@@ -199,22 +199,46 @@ class WalletRepositoryImpl implements WalletRepository {
 
   @override
   Future<List<EpisodeComment>> getComments(int episodeId) async {
-    final data = await _api.getJson('/episodes/$episodeId/comments');
-    if (data is List) {
-      return data
+    final page = await getCommentsPage(episodeId, page: 1, limit: 20);
+    return page.comments;
+  }
+
+  @override
+  Future<CommentPage> getCommentsPage(
+    int episodeId, {
+    required int page,
+    required int limit,
+  }) async {
+    final result =
+        await _api.getPage('/episodes/$episodeId/comments?page=$page&limit=$limit');
+    return CommentPage(
+      comments: result.data
           .whereType<Map<String, dynamic>>()
           .map(EpisodeComment.fromJson)
-          .toList();
-    }
-    throw const ApiException('Format komentar tidak dikenali.');
+          .toList(),
+      total: result.total,
+    );
   }
 
   @override
   Future<void> postComment(int episodeId, String content) async {
     _requireSession('menulis komentar');
+    // Kontrak backend AddComment membaca field `body` — mengirim nama
+    // lain membuat server selalu menjawab "Isi komentar wajib diisi"
+    // walau teks sudah diketik (bug yang dilaporkan uwa).
     await _api.postJson('/episodes/$episodeId/comments', <String, dynamic>{
-      'content': content,
+      'body': content,
     });
+  }
+
+  @override
+  Future<void> toggleCommentLike(int commentId, bool liked) async {
+    _requireSession('menyukai komentar');
+    if (liked) {
+      await _api.postJson('/comments/$commentId/like', <String, dynamic>{});
+    } else {
+      await _api.delete('/comments/$commentId/like');
+    }
   }
 
   @override

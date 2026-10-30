@@ -182,3 +182,36 @@ class SeriesDetail {
   final Series series;
   final List<SeriesEpisode> episodes;
 }
+
+/// Satu halaman series + total nyata (untuk lazy loading).
+class SeriesPage {
+  const SeriesPage({required this.series, required this.total});
+
+  final List<Series> series;
+  final int total;
+}
+
+/// Ringkasan rating series dari API (dihitung server, bukan karangan).
+/// [average] null = belum ada yang menilai (bukan nilai 0).
+/// [userStars] null = pemanggil belum menilai / belum masuk.
+class SeriesRatingSummary {
+  const SeriesRatingSummary({
+    required this.average,
+    required this.count,
+    this.userStars,
+  });
+
+  final double? average;
+  final int count;
+  final int? userStars;
+
+  factory SeriesRatingSummary.fromJson(Map<String, dynamic> json) {
+    final average = json['average_rating'];
+    final userStars = json['user_stars'];
+    return SeriesRatingSummary(
+      average: average is num ? average.toDouble() : null,
+      count: json['rating_count'] is int ? json['rating_count'] as int : 0,
+      userStars: userStars is int ? userStars : null,
+    );
+  }
+}

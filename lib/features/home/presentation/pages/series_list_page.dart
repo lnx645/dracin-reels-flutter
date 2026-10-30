@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/presentation/bloc/series_bloc.dart';
 import '../widgets/series_card.dart';
@@ -22,32 +23,13 @@ class SeriesListPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: DracinAppBar(title: title),
       body: SafeArea(
         child: series.isEmpty
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      const Icon(Icons.tv_outlined, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Belum ada series',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Seksi ini masih kosong.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
+            ? const DracinEmptyState(
+                icon: Icons.tv_outlined,
+                message: 'Belum ada series.\nSeksi ini masih kosong.',
               )
             : GridView.builder(
                 padding: const EdgeInsets.all(16),
@@ -149,43 +131,20 @@ class HomeSections extends StatelessWidget {
     return BlocBuilder<SeriesListBloc, SeriesListState>(
       builder: (context, state) {
         if (state.errorMessage != null) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.cloud_off, size: 64),
-                  const SizedBox(height: 16),
-                  Text(
-                    state.errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => context
-                        .read<SeriesListBloc>()
-                        .add(const SeriesListStarted()),
-                    child: const Text('Coba Lagi'),
-                  ),
-                ],
-              ),
-            ),
+          return DracinErrorState(
+            message: state.errorMessage!,
+            onRetry: () => context
+                .read<SeriesListBloc>()
+                .add(const SeriesListStarted()),
           );
         }
         if (state.isLoading && state.series.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
+          return const DracinGridSkeleton();
         }
         if (state.series.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'Belum ada series.',
-                textAlign: TextAlign.center,
-              ),
-            ),
+          return const DracinEmptyState(
+            icon: Icons.tv_outlined,
+            message: 'Belum ada series.',
           );
         }
         final all = state.series;

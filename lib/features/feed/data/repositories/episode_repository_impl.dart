@@ -31,6 +31,41 @@ class EpisodeRepositoryImpl implements EpisodeRepository {
   }
 
   @override
+  Future<EpisodePage> getEpisodesPage({
+    required int page,
+    required int limit,
+  }) async {
+    final EpisodePage fresh =
+        await _datasource.fetchEpisodesPage(page: page, limit: limit);
+    // Cache MENUMPUK antar halaman (bukan mengganti): toggle suka/
+    // simpan di halaman 2+ harus menemukan episodenya di cache.
+    final Map<String, Episode> kept = <String, Episode>{
+      for (final episode in _episodes) episode.id: episode,
+    };
+    final seen = <String>{};
+    final merged = <Episode>[];
+    for (final episode in <Episode>[..._episodes, ...fresh.episodes]) {
+      if (!seen.add(episode.id)) {
+        continue;
+      }
+      final Episode? old = kept[episode.id];
+      merged.add(
+        old == null
+            ? episode
+            : episode.copyWith(
+                isLiked: old.isLiked,
+                isBookmarked: old.isBookmarked,
+              ),
+      );
+    }
+    _episodes = merged;
+    return EpisodePage(
+      episodes: fresh.episodes,
+      totalSeries: fresh.totalSeries,
+    );
+  }
+
+  @override
   List<Episode> get cachedEpisodes => List<Episode>.unmodifiable(_episodes);
 
   @override

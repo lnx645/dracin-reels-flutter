@@ -30,7 +30,13 @@ abstract class WalletRepository {
   Future<List<HistoryEntry>> getHistory();
   Future<void> putProgress(int episodeId, int positionSeconds);
   Future<List<EpisodeComment>> getComments(int episodeId);
+  Future<CommentPage> getCommentsPage(
+    int episodeId, {
+    required int page,
+    required int limit,
+  });
   Future<void> postComment(int episodeId, String content);
+  Future<void> toggleCommentLike(int commentId, bool liked);
   Future<void> toggleLike(int episodeId, bool liked);
   Future<void> toggleBookmark(int seriesId, bool bookmarked);
 

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/session/session_cubit.dart';
-import '../../../admin/presentation/pages/admin_series_page.dart';
+import '../../../admin/presentation/pages/admin_dashboard_page.dart';
 import '../../../admin/presentation/pages/login_page.dart';
 
 /// Layar buat video: placeholder jujur, unggah dan rekam menyusul.
@@ -31,18 +32,20 @@ class CreatePage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             if (session.isAdmin)
-              ElevatedButton(
+              DracinButton(
+                label: 'Buka Panel Admin',
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const AdminSeriesPage(),
+                      builder: (_) => const AdminDashboardPage(),
                     ),
                   );
                 },
-                child: const Text('Buka Panel Admin'),
               )
             else
-              OutlinedButton(
+              DracinButton(
+                label: 'Masuk sebagai Admin',
+                variant: DracinButtonVariant.ghost,
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
@@ -50,7 +53,6 @@ class CreatePage extends StatelessWidget {
                     ),
                   );
                 },
-                child: const Text('Masuk sebagai Admin'),
               ),
           ],
         ),

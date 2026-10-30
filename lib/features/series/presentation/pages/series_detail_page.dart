@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/session/session_cubit.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../domain/entities/series.dart';
 import '../../domain/repositories/series_repository.dart';
 import '../bloc/series_bloc.dart';
 import '../widgets/filter_chip.dart';
+import '../widgets/rating_section.dart';
 import 'series_detail_widgets.dart';
 
 /// Halaman detail series ala aplikasi drama profesional:
@@ -34,6 +36,9 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   int? _lastUnlockShown;
 
   String _duration(int seconds) {
+    if (seconds <= 0) {
+      return '';
+    }
     final minutes = seconds ~/ 60;
     final rest = seconds % 60;
     return '$minutes:${rest.toString().padLeft(2, '0')}';
@@ -191,44 +196,39 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
             final detail = state.detail;
             if (state.errorMessage != null) {
               return Scaffold(
-                appBar: AppBar(title: const Text('Detail Series')),
-                body: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        const Icon(Icons.cloud_off, size: 64),
-                        const SizedBox(height: 16),
-                        Text(
-                          state.errorMessage!,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: () => context
-                              .read<SeriesDetailBloc>()
-                              .add(
-                                SeriesDetailStarted(widget.seriesId),
-                              ),
-                          child: const Text('Coba Lagi'),
-                        ),
-                      ],
-                    ),
-                  ),
+                appBar: const DracinAppBar(title: 'Detail Series'),
+                body: DracinErrorState(
+                  message: state.errorMessage!,
+                  onRetry: () => context.read<SeriesDetailBloc>().add(
+                        SeriesDetailStarted(widget.seriesId),
+                      ),
                 ),
               );
             }
             if (state.isLoading || detail == null) {
               return Scaffold(
-                appBar: AppBar(title: const Text('Detail Series')),
-                body: const Center(child: CircularProgressIndicator()),
+                appBar: const DracinAppBar(title: 'Detail Series'),
+                body: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: const <Widget>[
+                    DracinSkeletonBox(
+                      width: double.infinity,
+                      height: 200,
+                      radius: 16,
+                    ),
+                    SizedBox(height: 16),
+                    DracinSkeletonBox(width: 200, height: 22),
+                    SizedBox(height: 8),
+                    DracinSkeletonBox(width: double.infinity, height: 14),
+                    SizedBox(height: 8),
+                    DracinSkeletonBox(width: double.infinity, height: 14),
+                  ],
+                ),
               );
             }
             final series = detail.series;
             return Scaffold(
-              appBar: AppBar(title: Text(series.title)),
+              appBar: DracinAppBar(title: series.title),
               body: SafeArea(
                 child: ListView(
                   padding: const EdgeInsets.all(16),
@@ -255,6 +255,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                       series.description,
                       style: theme.textTheme.bodyMedium,
                     ),
+                    const SizedBox(height: 12),
+                    RatingSection(seriesId: series.id),
                     const SizedBox(height: 12),
                     if (series.genres.isNotEmpty)
                       Wrap(

@@ -7,6 +7,13 @@ import '../entities/episode.dart';
 abstract class EpisodeRepository {
   Future<List<Episode>> getEpisodes();
 
+  /// Satu halaman episode (lazy loading feed): episode dari series
+  /// pada halaman itu + total series nyata dari meta API.
+  Future<EpisodePage> getEpisodesPage({
+    required int page,
+    required int limit,
+  });
+
   /// Daftar terakhir yang berhasil dimuat (kosong bila belum pernah
   /// berhasil). Dipakai UI untuk toggle optimistis tanpa memuat ulang.
   List<Episode> get cachedEpisodes;
@@ -16,4 +23,12 @@ abstract class EpisodeRepository {
   Episode? toggleLike(String id);
 
   Episode? toggleBookmark(String id);
+}
+
+/// Satu halaman episode feed + total series nyata (untuk hasMore).
+class EpisodePage {
+  const EpisodePage({required this.episodes, required this.totalSeries});
+
+  final List<Episode> episodes;
+  final int totalSeries;
 }

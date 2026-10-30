@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
@@ -302,6 +304,31 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
     }
   }
 
+  /// Nilai tersimpan (edit) untuk satu kunci `existing`, atau null
+  /// bila kosong — dipakai baris info "tersimpan" di form supaya admin
+  /// tahu berkas/durasi lama sebelum menggantinya.
+  String? _storedText(String key) {
+    final value = widget.existing?[key];
+    if (value is String && value.isNotEmpty) {
+      return value;
+    }
+    return null;
+  }
+
+  /// Baris info durasi + HLS tersimpan (edit saja): durasi 0 =
+  /// belum diketahui (bukan "0:00"); HLS kosong = belum ditranskode
+  /// (tautan eksternal tidak pernah ditranskode server).
+  String _storedInfoLine() {
+    final duration = widget.existing?['duration_seconds'];
+    final durationText = duration is int && duration > 0
+        ? '$duration detik'
+        : 'belum diketahui';
+    final hls = _storedText('hls_url');
+    final hlsText =
+        hls != null ? 'HLS tersedia' : 'HLS belum tersedia';
+    return 'Durasi tersimpan: $durationText • $hlsText.';
+  }
+
   Widget _fileRow(String label, PlatformFile? file, VoidCallback onPick) {
     return Row(
       children: <Widget>[
@@ -314,7 +341,11 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
           ),
         ),
         const SizedBox(width: 12),
-        OutlinedButton(onPressed: onPick, child: Text('Pilih $label')),
+        DracinButton(
+          label: 'Pilih $label',
+          variant: DracinButtonVariant.ghost,
+          onPressed: onPick,
+        ),
       ],
     );
   }
@@ -323,10 +354,9 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          '${_isEdit ? 'Edit' : 'Tambah'} Episode — ${widget.seriesTitle}',
-        ),
+      appBar: DracinAppBar(
+        title:
+            '${_isEdit ? 'Edit' : 'Tambah'} Episode — ${widget.seriesTitle}',
       ),
       body: SafeArea(
         child: ListView(
@@ -463,6 +493,16 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                 color: AppColors.textSecondary,
               ),
             ),
+            if (_isEdit) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                _storedInfoLine(),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             _fileRow(
               'Subtitle',
@@ -472,6 +512,16 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                 FileType.any,
               ),
             ),
+            if (_storedText('subtitle_url') != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                'Subtitle tersimpan: ${_storedText('subtitle_url')}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             _fileRow(
               'Thumbnail',
@@ -481,6 +531,16 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
                 FileType.image,
               ),
             ),
+            if (_storedText('thumbnail_url') != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                'Thumbnail tersimpan: ${_storedText('thumbnail_url')}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: _priceController,
@@ -516,9 +576,10 @@ class _EpisodeFormPageState extends State<EpisodeFormPage> {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: DracinButton(
+                label: _saving ? 'Menyimpan...' : 'Simpan Episode',
+                isLoading: _saving,
                 onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Menyimpan...' : 'Simpan Episode'),
               ),
             ),
           ],

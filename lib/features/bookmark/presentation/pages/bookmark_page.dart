@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../admin/presentation/pages/login_page.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../wallet/domain/repositories/wallet_repository.dart';
+import '../../../../core/design/widgets.dart';
 import '../bloc/bookmark_bloc.dart';
 
 class BookmarkPage extends StatelessWidget {
@@ -31,74 +32,48 @@ class BookmarkView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bookmark')),
+      appBar: const DracinAppBar(title: 'Bookmark'),
       body: BlocBuilder<BookmarkBloc, BookmarkState>(
         builder: (context, state) {
           if (state.errorMessage != null) {
             final bool needsLogin =
                 state.errorMessage!.contains('Masuk dulu');
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const Icon(Icons.cloud_off, size: 64),
-                    const SizedBox(height: 16),
-                    Text(
-                      state.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
+            if (needsLogin) {
+              return DracinEmptyState(
+                icon: Icons.login,
+                message: state.errorMessage!,
+                actionLabel: 'Masuk',
+                onAction: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const LoginPage(),
                     ),
-                    const SizedBox(height: 16),
-                    if (needsLogin)
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const LoginPage(),
-                            ),
-                          );
-                        },
-                        child: const Text('Masuk'),
-                      )
-                    else
-                      ElevatedButton(
-                        onPressed: () => context
-                            .read<BookmarkBloc>()
-                            .add(const BookmarkStarted()),
-                        child: const Text('Coba Lagi'),
-                      ),
-                  ],
-                ),
-              ),
+                  );
+                },
+              );
+            }
+            return DracinErrorState(
+              message: state.errorMessage!,
+              onRetry: () => context.read<BookmarkBloc>().add(
+                    const BookmarkStarted(),
+                  ),
             );
           }
           if (state.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: 5,
+              itemBuilder: (context, index) => const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: DracinRowSkeleton(),
+              ),
+            );
           }
           if (state.series.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(Icons.bookmark_outline, size: 64),
-                    SizedBox(height: 16),
-                    Text(
-                      'Belum ada series tersimpan.',
-                      style: Theme.of(context).textTheme.titleMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Ketuk Simpan di feed untuk menambahkannya ke sini.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+            return const DracinEmptyState(
+              icon: Icons.bookmark_outline,
+              message: 'Belum ada series tersimpan.\n'
+                  'Ketuk Simpan di feed untuk menambahkannya ke sini.',
             );
           }
           return ListView.builder(
@@ -133,32 +108,43 @@ class _BookmarkTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 64,
-        height: 48,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: DracinCard(
+        onTap: onOpen,
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 64,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.play_arrow, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    series.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    series.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            TextButton(onPressed: onRemove, child: const Text('Hapus')),
+            TextButton(onPressed: onOpen, child: const Text('Buka')),
+          ],
         ),
-        child: const Icon(Icons.play_arrow, color: Colors.white),
-      ),
-      title: Text(
-        series.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        series.description,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          TextButton(onPressed: onRemove, child: const Text('Hapus')),
-          TextButton(onPressed: onOpen, child: const Text('Buka')),
-        ],
       ),
     );
   }

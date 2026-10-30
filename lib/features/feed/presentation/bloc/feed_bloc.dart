@@ -10,11 +10,11 @@ import 'feed_state.dart';
 class FeedBloc extends Bloc<FeedEvent, FeedState> {
   FeedBloc(EpisodeRepository repository)
       : _repository = repository,
-        _getEpisodes = GetEpisodes(repository),
         _toggleLike = ToggleLike(repository),
         _toggleBookmark = ToggleBookmark(repository),
         super(const FeedState()) {
     on<FeedStarted>(_onStarted);
+    on<FeedLoadMore>(_onLoadMore);
     on<FeedLikeToggled>(_onLikeToggled);
     on<FeedBookmarkToggled>(_onBookmarkToggled);
     on<FeedIndexChanged>(_onIndexChanged);
@@ -25,9 +25,10 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
   }
 
   final EpisodeRepository _repository;
-  final GetEpisodes _getEpisodes;
   final ToggleLike _toggleLike;
   final ToggleBookmark _toggleBookmark;
+
+  static const int _pageSize = 20;
 
   /// Daftar episode saat ini tanpa memuat ulang (untuk toggle
   /// optimistis di UI).
@@ -36,11 +37,16 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
   Future<void> _onStarted(FeedStarted event, Emitter<FeedState> emit) async {
     emit(state.copyWith(isLoading: true, clearError: true));
     try {
-      final episodes = await _getEpisodes();
+      final page = await _repository.getEpisodesPage(
+        page: 1,
+        limit: _pageSize,
+      );
       emit(
         state.copyWith(
-          episodes: episodes,
+          episodes: page.episodes,
           currentIndex: 0,
+          page: 1,
+          totalSeries: page.totalSeries,
           isLoading: false,
         ),
       );
@@ -48,6 +54,40 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
       // Error ASLI diteruskan ke UI (pesan + tombol Coba Lagi),
       // bukan ditutup-tutupi dengan data contoh.
       emit(state.copyWith(isLoading: false, errorMessage: error.message));
+    }
+  }
+
+  Future<void> _onLoadMore(
+    FeedLoadMore event,
+    Emitter<FeedState> emit,
+  ) async {
+    if (state.isLoading || state.isLoadingMore || !state.hasMore) {
+      return;
+    }
+    emit(state.copyWith(isLoadingMore: true));
+    try {
+      final page = await _repository.getEpisodesPage(
+        page: state.page + 1,
+        limit: _pageSize,
+      );
+      final seen = state.episodes.map((e) => e.id).toSet();
+      final merged = <Episode>[
+        ...state.episodes,
+        ...page.episodes.where((e) => seen.add(e.id)),
+      ];
+      emit(
+        state.copyWith(
+          episodes: merged,
+          page: state.page + 1,
+          totalSeries: page.totalSeries,
+          isLoadingMore: false,
+        ),
+      );
+    } on ApiException {
+      // Gagal muat halaman berikut = halaman lama tetap tampil;
+      // pengguna bisa scroll lagi untuk mencoba (tanpa layar error
+      // yang menutup feed).
+      emit(state.copyWith(isLoadingMore: false));
     }
   }
 

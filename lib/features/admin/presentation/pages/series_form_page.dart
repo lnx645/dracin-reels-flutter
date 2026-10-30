@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
@@ -201,8 +203,8 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEdit ? 'Edit Series' : 'Tambah Series'),
+      appBar: DracinAppBar(
+        title: _isEdit ? 'Edit Series' : 'Tambah Series',
       ),
       body: SafeArea(
         child: ListView(
@@ -247,9 +249,10 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                OutlinedButton(
+                DracinButton(
+                  label: 'Pilih Cover',
+                  variant: DracinButtonVariant.ghost,
                   onPressed: _pickCover,
-                  child: const Text('Pilih Cover'),
                 ),
               ],
             ),
@@ -327,15 +330,16 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: DracinButton(
+                label: _saving ? 'Menyimpan...' : 'Simpan Series',
+                isLoading: _saving,
                 onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Menyimpan...' : 'Simpan Series'),
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Genre diatur lewat web admin untuk saat ini; aplikasi '
-              'mobile mengirim daftar genre kosong.',
+              'Genre dipilih di atas dan dikirim ke server bersama '
+              'series.',
               style: TextStyle(
                 fontSize: 13,
                 color: AppColors.textSecondary,

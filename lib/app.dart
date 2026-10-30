@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'core/api/api_client.dart';
+import 'core/design/widgets.dart';
 import 'core/navigation/route_observer.dart';
 import 'core/session/session_cubit.dart';
 import 'core/theme/app_theme.dart';
+import 'features/admin/data/repositories/admin_panel_repository_impl.dart';
+import 'features/admin/domain/repositories/admin_panel_repository.dart';
 import 'features/admin/domain/repositories/admin_repository.dart';
 import 'features/admin/presentation/pages/login_page.dart';
 import 'features/create/presentation/pages/create_page.dart';
@@ -51,6 +54,9 @@ class DracinApp extends StatelessWidget {
         RepositoryProvider<WalletRepository>.value(value: walletRepository),
         RepositoryProvider<SeriesRepository>.value(value: seriesRepository),
         RepositoryProvider<AdminRepository>.value(value: adminRepository),
+        RepositoryProvider<AdminPanelRepository>.value(
+          value: AdminPanelRepositoryImpl(apiClient),
+        ),
       ],
       child: MultiBlocProvider(
         providers: <BlocProvider<dynamic>>[
@@ -119,44 +125,9 @@ class _MainShellState extends State<MainShell> {
     ];
     return Scaffold(
       body: pages[_index],
-      bottomNavigationBar: SafeArea(
-        child: BottomNavigationBar(
-          currentIndex: _index,
-          onTap: (index) => setState(() => _index = index),
-          items: <BottomNavigationBarItem>[
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Beranda',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.explore_outlined),
-              activeIcon: Icon(Icons.explore),
-              label: 'Jelajahi',
-            ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: const BoxDecoration(
-                  color: AppColors.accent,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.add, color: Colors.white),
-              ),
-              label: '+',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.notifications_outlined),
-              activeIcon: Icon(Icons.notifications),
-              label: 'Notifikasi',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profil',
-            ),
-          ],
-        ),
+      bottomNavigationBar: DracinBottomNav(
+        currentIndex: _index,
+        onTap: (index) => setState(() => _index = index),
       ),
     );
   }

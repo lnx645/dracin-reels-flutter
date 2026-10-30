@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/design/widgets.dart';
 import '../../../series/domain/entities/series.dart';
 
 /// Kartu series — desain yang sama dipakai di Beranda, halaman
@@ -124,9 +125,9 @@ class SeriesCard extends StatelessWidget {
         const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton(
+          child: DracinButton(
+            label: 'Lihat',
             onPressed: onOpen,
-            child: const Text('Lihat'),
           ),
         ),
       ],

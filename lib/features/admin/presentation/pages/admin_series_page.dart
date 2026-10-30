@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/session/session_cubit.dart';
@@ -18,7 +20,7 @@ class AdminSeriesPage extends StatelessWidget {
     final session = context.watch<SessionCubit>().state;
     if (!session.isAdmin) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Panel Admin')),
+        appBar: const DracinAppBar(title: 'Panel Admin'),
         body: const SafeArea(
           child: Center(
             child: Padding(
@@ -57,7 +59,7 @@ class AdminSeriesView extends StatelessWidget {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Panel Admin')),
+        appBar: const DracinAppBar(title: 'Panel Admin'),
         floatingActionButton: FloatingActionButton(
           onPressed: () async {
             await Navigator.of(context).push(
@@ -111,23 +113,28 @@ class AdminSeriesView extends StatelessWidget {
                   final id = item['id'];
                   final title = item['title'];
                   final status = item['status'];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: ListTile(
-                      title: Text(
-                        title is String ? title : 'Series',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        'ID ${id is int ? id : '-'} • '
-                        '${status is String ? status : ''}',
-                      ),
-                      trailing: PopupMenuButton<String>(
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: DracinCard(
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  title is String ? title : 'Series',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  'ID ${id is int ? id : '-'} • '
+                                  '${status is String ? status : ''}',
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuButton<String>(
                         onSelected: (value) async {
                           if (value == 'edit') {
                             await Navigator.of(context).push(
@@ -197,6 +204,8 @@ class AdminSeriesView extends StatelessWidget {
                             value: 'delete',
                             child: Text('Hapus'),
                           ),
+                        ],
+                      ),
                         ],
                       ),
                     ),

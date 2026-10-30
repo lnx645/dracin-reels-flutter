@@ -45,6 +45,15 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Satu halaman daftar dari API: baris data + total nyata dari meta.
+/// Dipakai daftar berpaginasi agar tahu kapan berhenti memuat.
+class PageResult {
+  const PageResult({required this.data, required this.total});
+
+  final List<dynamic> data;
+  final int total;
+}
+
 /// Klien HTTP tipis untuk API Dracin Reels. Semua respons mengikuti
 /// amplop backend: sukses `{success:true, data}`, gagal
 /// `{success:false, error:{message}}`.
@@ -131,6 +140,54 @@ class ApiClient {
           .get(Uri.parse('${ApiConfig.baseUrl}$path'), headers: _headers)
           .timeout(const Duration(seconds: 20));
       return _decode(response);
+    } on ApiException {
+      rethrow;
+    } on Exception {
+      throw const ApiException(
+        'Tidak dapat terhubung ke server. Periksa koneksi internet.',
+      );
+    }
+  }
+
+  /// Ambil satu halaman daftar DENGAN meta pagination backend
+  /// (`{data, meta:{page, limit, total}}`). [getJson] membuang meta,
+  /// jadi daftar berpaginasi (feed, komentar, admin) memakai ini.
+  /// Mengembalikan [PageResult] — data apa adanya + total nyata.
+  Future<PageResult> getPage(String path) async {
+    try {
+      final response = await _http
+          .get(Uri.parse('${ApiConfig.baseUrl}$path'), headers: _headers)
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        _throwFrom(response);
+      }
+      if (response.body.isEmpty) {
+        return const PageResult(data: <dynamic>[], total: 0);
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['success'] == false) {
+          final error = decoded['error'];
+          final message = error is Map<String, dynamic> &&
+                  error['message'] is String
+              ? error['message'] as String
+              : 'Terjadi kesalahan.';
+          throw ApiException(message, statusCode: response.statusCode);
+        }
+        final data = decoded['data'];
+        final meta = decoded['meta'];
+        var total = 0;
+        if (meta is Map<String, dynamic> && meta['total'] is int) {
+          total = meta['total'] as int;
+        } else if (data is List) {
+          total = data.length;
+        }
+        if (data is List) {
+          return PageResult(data: data, total: total);
+        }
+        return PageResult(data: const <dynamic>[], total: total);
+      }
+      return const PageResult(data: <dynamic>[], total: 0);
     } on ApiException {
       rethrow;
     } on Exception {

@@ -152,22 +152,62 @@ class ContinueItem {
 }
 
 /// Satu komentar episode.
+///
+/// Bentuk API baru (backend sosial): `id`, `user_name`, `body`,
+/// `like_count`, `liked_by_me`, `created_at`. Bentuk lama
+/// (`user.name`, `content`/`text`) tetap dibaca agar tidak pecah bila
+/// server belum diperbarui.
 class EpisodeComment {
   const EpisodeComment({
+    required this.id,
     required this.userName,
     required this.content,
+    this.likeCount = 0,
+    this.likedByMe = false,
+    this.createdAt,
   });
 
+  final int id;
   final String userName;
   final String content;
+  final int likeCount;
+  final bool likedByMe;
+  final DateTime? createdAt;
+
+  EpisodeComment copyWith({int? likeCount, bool? likedByMe}) {
+    return EpisodeComment(
+      id: id,
+      userName: userName,
+      content: content,
+      likeCount: likeCount ?? this.likeCount,
+      likedByMe: likedByMe ?? this.likedByMe,
+      createdAt: createdAt,
+    );
+  }
 
   factory EpisodeComment.fromJson(Map<String, dynamic> json) {
     final user = json['user'];
-    final userName = user is Map<String, dynamic> ? user['name'] : null;
-    final content = json['content'] ?? json['body'] ?? json['text'];
+    final userName = json['user_name'] is String
+        ? json['user_name'] as String
+        : (user is Map<String, dynamic> ? user['name'] : null);
+    final content = json['body'] ?? json['content'] ?? json['text'];
+    final createdRaw = json['created_at'];
     return EpisodeComment(
+      id: json['id'] is int ? json['id'] as int : 0,
       userName: userName is String ? userName : 'Penonton',
       content: content is String ? content : '',
+      likeCount: json['like_count'] is int ? json['like_count'] as int : 0,
+      likedByMe:
+          json['liked_by_me'] is bool ? json['liked_by_me'] as bool : false,
+      createdAt: createdRaw is String ? DateTime.tryParse(createdRaw) : null,
     );
   }
+}
+
+/// Satu halaman komentar + total nyata (untuk lazy loading).
+class CommentPage {
+  const CommentPage({required this.comments, required this.total});
+
+  final List<EpisodeComment> comments;
+  final int total;
 }

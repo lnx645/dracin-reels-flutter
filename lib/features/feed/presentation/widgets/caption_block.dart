@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_theme.dart';
+import '../../../../core/design/widgets.dart';
 import '../../domain/entities/episode.dart';
 
 /// Caption bawah: judul, deskripsi, tagar, tombol Tonton + Daftar.
 /// Feed hanya browsing: Tonton membuka halaman Player khusus.
+/// Deskripsi/tag kosong = TIDAK DIRIENDER (tinggi nol, tanpa gap) —
+/// bukan Text('') + SizedBox yang menyisakan ruang kosong.
 class CaptionBlock extends StatelessWidget {
   const CaptionBlock({
     required this.episode,
@@ -22,6 +24,8 @@ class CaptionBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final description = episode.description.trim();
+    final hashtags = episode.hashtags.join(' ').trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -32,33 +36,33 @@ class CaptionBlock extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 8),
-        Text(
-          episode.description,
-          style: theme.textTheme.bodyMedium,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          episode.hashtags.join(' '),
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppColors.textSecondary,
+        if (description.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: theme.textTheme.bodyMedium,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
+        ],
+        if (hashtags.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            hashtags,
+            style: theme.textTheme.bodySmall,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
         const SizedBox(height: 12),
         Row(
           children: <Widget>[
-            ElevatedButton(
-              onPressed: onWatch,
-              child: const Text('Tonton'),
-            ),
+            DracinButton(label: 'Tonton', onPressed: onWatch),
             const SizedBox(width: 12),
-            OutlinedButton(
+            DracinButton(
+              label: 'Daftar Episode',
               onPressed: onShowEpisodes,
-              child: const Text('Daftar Episode'),
+              variant: DracinButtonVariant.ghost,
             ),
           ],
         ),

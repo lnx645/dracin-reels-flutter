@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/session/session_cubit.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../admin/presentation/pages/admin_series_page.dart';
+import '../../../admin/presentation/pages/admin_dashboard_page.dart';
 import '../../../admin/presentation/pages/login_page.dart';
 import '../../../bookmark/presentation/pages/bookmark_page.dart';
 import '../../../history/presentation/pages/history_page.dart';
@@ -88,14 +89,16 @@ class ProfileView extends StatelessWidget {
                     ),
                     const SizedBox(width: 12),
                     if (session.isAuthenticated)
-                      OutlinedButton(
+                      DracinButton(
+                        label: 'Keluar',
+                        variant: DracinButtonVariant.ghost,
                         onPressed: () {
                           context.read<SessionCubit>().logout();
                         },
-                        child: const Text('Keluar'),
                       )
                     else
-                      ElevatedButton(
+                      DracinButton(
+                        label: 'Masuk',
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -103,7 +106,6 @@ class ProfileView extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('Masuk'),
                       ),
                   ],
                 ),
@@ -170,12 +172,12 @@ class ProfileView extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            ElevatedButton(
+                            DracinButton(
+                              label: 'Tonton',
                               onPressed: () => onOpenEpisode(
                                 's${continueItem.seriesId}'
                                 'e${continueItem.episodeId}',
                               ),
-                              child: const Text('Tonton'),
                             ),
                           ],
                         ),
@@ -189,7 +191,9 @@ class ProfileView extends StatelessWidget {
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
+                      child: DracinButton(
+                        label: 'Riwayat Tonton',
+                        variant: DracinButtonVariant.ghost,
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -199,13 +203,14 @@ class ProfileView extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('Riwayat Tonton'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
+                      child: DracinButton(
+                        label: 'Bookmark Saya',
+                        variant: DracinButtonVariant.ghost,
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -224,13 +229,14 @@ class ProfileView extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('Bookmark Saya'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
+                      child: DracinButton(
+                        label: 'Dompet & Hadiah',
+                        variant: DracinButtonVariant.ghost,
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -238,13 +244,14 @@ class ProfileView extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('Dompet & Hadiah'),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton(
+                      child: DracinButton(
+                        label: 'VIP',
+                        variant: DracinButtonVariant.ghost,
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -252,23 +259,23 @@ class ProfileView extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('VIP'),
                       ),
                     ),
                     if (session.isAdmin) ...<Widget>[
                       const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton.icon(
+                        child: DracinButton(
+                          label: 'Panel Admin',
+                          icon: Icons.admin_panel_settings,
                           onPressed: () {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
-                                builder: (_) => const AdminSeriesPage(),
+                                builder: (_) =>
+                                    const AdminDashboardPage(),
                               ),
                             );
                           },
-                          icon: const Icon(Icons.admin_panel_settings),
-                          label: const Text('Panel Admin'),
                         ),
                       ),
                     ],
@@ -310,27 +317,18 @@ class ProfileView extends StatelessWidget {
                         return Center(
                           child: Column(
                             children: <Widget>[
-                              OutlinedButton.icon(
+                              DracinButton(
+                                label: checking
+                                    ? 'Memeriksa…'
+                                    : 'Periksa Update',
+                                icon: Icons.system_update,
+                                isLoading: checking,
+                                variant: DracinButtonVariant.ghost,
                                 onPressed: checking
                                     ? null
                                     : () => context
                                         .read<UpdateCubit>()
                                         .checkNow(),
-                                icon: checking
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child:
-                                            CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.system_update),
-                                label: Text(
-                                  checking
-                                      ? 'Memeriksa…'
-                                      : 'Periksa Update',
-                                ),
                               ),
                               if (updateState is UpdateUpToDate) ...<Widget>[
                                 const SizedBox(height: 8),

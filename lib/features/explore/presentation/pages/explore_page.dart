@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/design/widgets.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/domain/repositories/series_repository.dart';
 import '../../../series/presentation/bloc/series_bloc.dart';
 import '../../../series/presentation/pages/series_detail_page.dart';
-import '../../../series/presentation/widgets/filter_chip.dart';
 import '../../../wallet/domain/entities/history.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 
@@ -48,9 +48,29 @@ class ExploreView extends StatefulWidget {
 
 class _ExploreViewState extends State<ExploreView> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 300) {
+      context.read<SeriesListBloc>().add(const SeriesListMoreRequested());
+    }
+  }
 
   @override
   void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -103,9 +123,9 @@ class _ExploreViewState extends State<ExploreView> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton(
+                  DracinButton(
+                    label: 'Cari',
                     onPressed: _applySearch,
-                    child: const Text('Cari'),
                   ),
                 ],
               ),
@@ -120,21 +140,21 @@ class _ExploreViewState extends State<ExploreView> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: <Widget>[
-                        SeriesFilterChip(
+                        DracinChip(
                           label: 'Semua',
                           selected: seriesState.selectedGenreId == null,
-                          onSelected: () => context
+                          onTap: () => context
                               .read<SeriesListBloc>()
                               .add(const SeriesListGenreChanged(null)),
                         ),
                         ...seriesState.genres.map(
                           (genre) => Padding(
                             padding: const EdgeInsets.only(left: 8),
-                            child: SeriesFilterChip(
+                            child: DracinChip(
                               label: genre.name,
                               selected:
                                   seriesState.selectedGenreId == genre.id,
-                              onSelected: () => context
+                              onTap: () => context
                                   .read<SeriesListBloc>()
                                   .add(
                                     SeriesListGenreChanged(genre.id),
@@ -149,19 +169,19 @@ class _ExploreViewState extends State<ExploreView> {
                           color: AppColors.border,
                         ),
                         const SizedBox(width: 8),
-                        SeriesFilterChip(
+                        DracinChip(
                           label: 'Peringkat',
                           selected:
                               seriesState.sort == SeriesSort.rating,
-                          onSelected: () =>
+                          onTap: () =>
                               _toggleSort(SeriesSort.rating),
                         ),
                         const SizedBox(width: 8),
-                        SeriesFilterChip(
+                        DracinChip(
                           label: 'Baru Tayang',
                           selected:
                               seriesState.sort == SeriesSort.newest,
-                          onSelected: () =>
+                          onTap: () =>
                               _toggleSort(SeriesSort.newest),
                         ),
                       ],
@@ -230,69 +250,36 @@ class _ExploreViewState extends State<ExploreView> {
                 child: BlocBuilder<SeriesListBloc, SeriesListState>(
                   builder: (context, seriesState) {
                     if (seriesState.errorMessage != null) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              const Icon(Icons.cloud_off, size: 64),
-                              const SizedBox(height: 16),
-                              Text(
-                                seriesState.errorMessage!,
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () => context
-                                    .read<SeriesListBloc>()
-                                    .add(const SeriesListStarted()),
-                                child: const Text('Coba Lagi'),
-                              ),
-                            ],
-                          ),
-                        ),
+                      return DracinErrorState(
+                        message: seriesState.errorMessage!,
+                        onRetry: () => context
+                            .read<SeriesListBloc>()
+                            .add(const SeriesListStarted()),
                       );
                     }
                     if (seriesState.isLoading &&
                         seriesState.series.isEmpty) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
+                      return const DracinGridSkeleton();
                     }
                     if (seriesState.series.isEmpty) {
                       final filtering =
                           seriesState.selectedGenreId != null ||
                               seriesState.query.isNotEmpty;
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            const Icon(Icons.search_off, size: 64),
-                            const SizedBox(height: 16),
-                            const Text('Belum ada series yang cocok.'),
-                            if (filtering) ...<Widget>[
-                              const SizedBox(height: 16),
-                              OutlinedButton(
-                                onPressed: () {
-                                  _searchController.clear();
-                                  context
-                                      .read<SeriesListBloc>()
-                                      .add(
-                                        const SeriesListGenreChanged(null),
-                                      );
-                                  context
-                                      .read<SeriesListBloc>()
-                                      .add(
-                                        const SeriesListQueryChanged(''),
-                                      );
-                                },
-                                child: const Text('Hapus Filter'),
-                              ),
-                            ],
-                          ],
-                        ),
+                      return DracinEmptyState(
+                        icon: Icons.search_off,
+                        message: 'Belum ada series yang cocok.',
+                        actionLabel: filtering ? 'Hapus Filter' : null,
+                        onAction: filtering
+                            ? () {
+                                _searchController.clear();
+                                context.read<SeriesListBloc>().add(
+                                      const SeriesListGenreChanged(null),
+                                    );
+                                context.read<SeriesListBloc>().add(
+                                      const SeriesListQueryChanged(''),
+                                    );
+                              }
+                            : null,
                       );
                     }
                     // Masonry tanpa dependensi baru: satu scroll,
@@ -340,12 +327,24 @@ class _ExploreViewState extends State<ExploreView> {
                     }
 
                     return SingleChildScrollView(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      controller: _scrollController,
+                      child: Column(
                         children: <Widget>[
-                          column(left),
-                          const SizedBox(width: 12),
-                          column(right),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              column(left),
+                              const SizedBox(width: 12),
+                              column(right),
+                            ],
+                          ),
+                          if (seriesState.isLoadingMore) ...<Widget>[
+                            const SizedBox(height: 24),
+                            const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
                         ],
                       ),
                     );
@@ -404,9 +403,9 @@ class _ContinueCard extends StatelessWidget {
           const Spacer(),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
+            child: DracinButton(
+              label: 'Lanjutkan',
               onPressed: onOpen,
-              child: const Text('Lanjutkan'),
             ),
           ),
         ],

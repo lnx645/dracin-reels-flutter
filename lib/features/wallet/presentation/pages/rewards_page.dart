@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/session/session_cubit.dart';
@@ -68,7 +70,7 @@ class _RewardsPageState extends State<RewardsPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Dompet & Hadiah')),
+        appBar: const DracinAppBar(title: 'Dompet & Hadiah'),
         body: SafeArea(
           child: BlocBuilder<WalletBloc, WalletState>(
             builder: (context, state) {
@@ -152,13 +154,13 @@ class _RewardsPageState extends State<RewardsPage> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        ElevatedButton(
+                        DracinButton(
+                          label: 'Check-in',
                           onPressed: state.isLoading
                               ? null
                               : () => context
                                   .read<WalletBloc>()
                                   .add(const WalletCheckinRequested()),
-                          child: const Text('Check-in'),
                         ),
                       ],
                     ),
@@ -209,16 +211,18 @@ class _RewardsPageState extends State<RewardsPage> {
                           ),
                           const SizedBox(width: 12),
                           if (task.type == 'checkin')
-                            ElevatedButton(
+                            DracinButton(
+                              label: 'Klaim',
                               onPressed: state.isLoading
                                   ? null
                                   : () => context.read<WalletBloc>().add(
                                         const WalletCheckinRequested(),
                                       ),
-                              child: const Text('Klaim'),
                             )
                           else
-                            OutlinedButton(
+                            DracinButton(
+                              label: 'Lihat',
+                              variant: DracinButtonVariant.ghost,
                               onPressed: () async {
                                 await showDialog<void>(
                                   context: context,
@@ -240,7 +244,6 @@ class _RewardsPageState extends State<RewardsPage> {
                                   ),
                                 );
                               },
-                              child: const Text('Lihat'),
                             ),
                         ],
                       ),
@@ -296,9 +299,10 @@ class _RewardsPageState extends State<RewardsPage> {
                             style: theme.textTheme.labelLarge,
                           ),
                           const SizedBox(width: 12),
-                          OutlinedButton(
+                          DracinButton(
+                            label: 'Beli',
+                            variant: DracinButtonVariant.ghost,
                             onPressed: _showPaymentLater,
-                            child: const Text('Beli'),
                           ),
                         ],
                       ),
@@ -306,7 +310,10 @@ class _RewardsPageState extends State<RewardsPage> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    child: OutlinedButton.icon(
+                    child: DracinButton(
+                      label: 'Lihat Paket VIP',
+                      icon: Icons.star,
+                      variant: DracinButtonVariant.ghost,
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
@@ -314,8 +321,6 @@ class _RewardsPageState extends State<RewardsPage> {
                           ),
                         );
                       },
-                      icon: const Icon(Icons.star),
-                      label: const Text('Lihat Paket VIP'),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -326,11 +331,11 @@ class _RewardsPageState extends State<RewardsPage> {
                       }
                       return SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: DracinButton(
+                          label: 'Masuk untuk saldo server',
                           onPressed: () {
                             Navigator.of(context).pushNamed('/login');
                           },
-                          child: const Text('Masuk untuk saldo server'),
                         ),
                       );
                     },

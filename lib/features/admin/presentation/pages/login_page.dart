@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/design/widgets.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/session/session_cubit.dart';
@@ -48,7 +50,7 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Masuk')),
+      appBar: const DracinAppBar(title: 'Masuk'),
       body: SafeArea(
         child: BlocBuilder<SessionCubit, SessionState>(
           builder: (context, state) {
@@ -97,18 +99,10 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
+                  child: DracinButton(
+                    label: 'Masuk',
+                    isLoading: loading,
                     onPressed: loading ? null : _submit,
-                    child: loading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text('Masuk'),
                   ),
                 ),
               ],

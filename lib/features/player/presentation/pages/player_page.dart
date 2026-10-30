@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
 import '../../../../core/session/session_cubit.dart';
+import '../../../../core/share/share_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../feed/domain/entities/episode.dart';
 import '../../../feed/presentation/bloc/feed_bloc.dart';
@@ -36,7 +37,13 @@ import '../../../wallet/presentation/widgets/comments_sheet.dart';
 /// Tautan halaman web (mis. halaman YouTube) tidak dapat diputar oleh
 /// pemutar ini — init gagal ditampilkan sebagai error asli + Coba Lagi.
 class PlayerPage extends StatefulWidget {
-  const PlayerPage({required this.episodeId, this.seriesId = 1, super.key});
+  const PlayerPage({
+    required this.episodeId,
+    this.seriesId = 1,
+    this.autoPlay = true,
+    this.suppressResume = false,
+    super.key,
+  });
 
   /// Id episode API (`s{seriesId}e{episodeId}`).
   final String episodeId;
@@ -44,6 +51,19 @@ class PlayerPage extends StatefulWidget {
   /// Series fallback bila id tidak memuat series (tidak terjadi untuk
   /// id dari feed/detail/riwayat yang baru).
   final int seriesId;
+
+  /// Buka dari Daftar Episode/Tonton = langsung diputar (perintah
+  /// uwa). Default true: SEMUA bukaan lewat konstruktor adalah bukaan
+  /// pilihan pengguna → autoplay. Auto-next internal memakai
+  /// [_switchTo] (bukan konstruktor).
+  final bool autoPlay;
+
+  /// Abaikan posisi tersimpan (mulai dari 0). Default false: bukaan
+  /// ulang episode yang sama tetap lanjut dari posisi tersimpan
+  /// (aturan posisi dipertahankan). Auto-next memakai true lewat
+  /// [_switchTo]. DUA FLAG INI TERPISAH: autoPlay = langsung memutar,
+  /// suppressResume = mulai dari 0 — tidak boleh saling menggantikan.
+  final bool suppressResume;
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
@@ -181,6 +201,13 @@ class _PlayerPageState extends State<PlayerPage> {
     super.initState();
     _currentId = widget.episodeId;
     _seriesId = _parseSeriesId(widget.episodeId) ?? widget.seriesId;
+    _resumeSuppressed = widget.suppressResume;
+    // Bukaan pilihan pengguna langsung memutar (area video membaca
+    // nilai ini saat init). Locked episode tidak pernah init video,
+    // jadi flag ini tidak berpengaruh di sana.
+    if (widget.autoPlay) {
+      _playRequest.value = true;
+    }
   }
 
   @override
@@ -271,7 +298,11 @@ class _PlayerPageState extends State<PlayerPage> {
     }
     final nextId = _latestNextId;
     if (nextId != null) {
-      _switchTo(nextId, autoPlay: !_latestNextLocked);
+      _switchTo(
+        nextId,
+        autoPlay: !_latestNextLocked,
+        suppressResume: true,
+      );
     } else if (!_ended) {
       setState(() => _ended = true);
     }
@@ -620,7 +651,11 @@ class _PlayerPageState extends State<PlayerPage> {
         );
   }
 
-  void _switchTo(String episodeId, {bool autoPlay = false}) {
+  void _switchTo(
+    String episodeId, {
+    bool autoPlay = false,
+    bool suppressResume = false,
+  }) {
     _hideTimer?.cancel();
     // Simpan posisi episode lama sebelum pindah (best-effort).
     _savePositionForExit();
@@ -639,7 +674,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _videoKey = GlobalKey();
       _resumePosition = null;
       _resumeEpisodeId = 0;
-      _resumeSuppressed = autoPlay;
+      _resumeSuppressed = suppressResume;
       _sessionPlayed = false;
       _lastSavedPosition = Duration.zero;
       _chromeVisible = true;
@@ -649,8 +684,9 @@ class _PlayerPageState extends State<PlayerPage> {
       _descriptionExpanded = false;
       _ended = false;
     });
-    // Pindah MANUAL tidak auto-memutar (pengguna mengetuk Daftar
-    // Episode → ia yang mengetuk play). AUTO-NEXT memutar langsung.
+    // Pindah MANUAL dari Daftar Episode ikut autoplay (perintah uwa)
+    // TAPI tetap lanjut dari posisi tersimpan (suppressResume false).
+    // AUTO-NEXT memutar langsung DARI 0 (suppressResume true).
     _playRequest.value = autoPlay;
   }
 
@@ -703,35 +739,25 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
-  void _showShareSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text('Bagikan', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(
-                'Bagikan episode ini menyusul (UI saja).',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                  child: const Text('Tutup'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  /// Bagikan lewat share sheet sistem: judul series/episode yang
+  /// benar, teks saja (tanpa tautan karangan). Gagal → pesan asli.
+  Future<void> _showShareSheet(Episode episode) async {
+    final seriesPart = episode.seriesTitle.trim().isEmpty
+        ? ''
+        : '${episode.seriesTitle} — ';
+    final text =
+        'Episode ${episode.number} | $seriesPart${episode.title}\n'
+        'Tonton di Dracin Reels';
+    try {
+      await DracinShare.shareText(text);
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
   /// Bottom sheet daftar episode — HANYA episode series yang sedang
@@ -967,6 +993,7 @@ class _PlayerPageState extends State<PlayerPage> {
                                       Navigator.of(sheetContext).pop();
                                       _switchTo(
                                         's$seriesId' 'e${detail.id}',
+                                        autoPlay: true,
                                       );
                                     },
                                     child: Stack(
@@ -1195,7 +1222,7 @@ class _PlayerPageState extends State<PlayerPage> {
           seriesId: _seriesId,
           onOpenEpisode: (episodeId) {
             Navigator.of(context).pop();
-            _switchTo(episodeId);
+            _switchTo(episodeId, autoPlay: true);
           },
         ),
       ),
@@ -1305,7 +1332,7 @@ class _PlayerPageState extends State<PlayerPage> {
         touchSize: touchSize,
         onPressed: () {
           _resetHideTimer();
-          _showShareSheet();
+          _showShareSheet(episode);
         },
       ),
     ];
@@ -1796,6 +1823,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 if (detailState.errorMessage != null &&
                     detailState.detail == null) {
                   return Scaffold(
+                    resizeToAvoidBottomInset: false,
                     appBar: AppBar(
                       title: Text(
                         'Episode ${feedEpisode?.number ?? ''}',
@@ -1853,6 +1881,7 @@ class _PlayerPageState extends State<PlayerPage> {
                         : null);
                 if (episode == null) {
                   return Scaffold(
+                    resizeToAvoidBottomInset: false,
                     appBar: AppBar(title: const Text('Player')),
                     body: const Center(
                       child: Text('Episode tidak ditemukan.'),
@@ -2018,6 +2047,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 // yang dikunci: chrome hilang, fokus video).
                 if (!chromeVisible) {
                   return Scaffold(
+                    resizeToAvoidBottomInset: false,
                     body: SafeArea(
                       child: Column(
                         children: <Widget>[
@@ -2054,6 +2084,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 // adalah Expanded + scroll, sehingga ia yang meluap
                 // (scroll), bukan pil.
                 return Scaffold(
+                  resizeToAvoidBottomInset: false,
                   body: SafeArea(
                     child: LayoutBuilder(
                       builder: (context, constraints) {

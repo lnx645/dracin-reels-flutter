@@ -7,6 +7,9 @@ class FeedState {
     this.currentIndex = 0,
     this.tab = FeedTab.forYou,
     this.isLoading = false,
+    this.isLoadingMore = false,
+    this.page = 1,
+    this.totalSeries = 0,
     this.errorMessage,
     this.followedSeriesIds = const <int>{},
     this.preferenceScores = const <int, int>{},
@@ -19,6 +22,24 @@ class FeedState {
   /// True saat memuat dari API (bukan saat daftar kosong karena
   /// memang tidak ada data — itu empty state, bukan loading).
   final bool isLoading;
+
+  /// True saat memuat halaman berikutnya (lazy).
+  final bool isLoadingMore;
+
+  /// Halaman series terakhir yang dimuat + total series dari meta.
+  final int page;
+  final int totalSeries;
+
+  /// Masih ada halaman berikut: series unik yang sudah dimuat
+  /// kurang dari total series meta. Bila total belum diketahui
+  /// (0), dianggap habis agar tidak memuat tanpa henti.
+  bool get hasMore {
+    if (totalSeries <= 0) {
+      return false;
+    }
+    final loadedSeries = episodes.map((e) => e.seriesId).toSet().length;
+    return loadedSeries < totalSeries;
+  }
 
   /// Pesan error ASLI dari request API terakhir; null bila tidak ada.
   final String? errorMessage;
@@ -66,6 +87,9 @@ class FeedState {
     int? currentIndex,
     FeedTab? tab,
     bool? isLoading,
+    bool? isLoadingMore,
+    int? page,
+    int? totalSeries,
     String? errorMessage,
     bool clearError = false,
     Set<int>? followedSeriesIds,
@@ -76,6 +100,9 @@ class FeedState {
       currentIndex: currentIndex ?? this.currentIndex,
       tab: tab ?? this.tab,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      page: page ?? this.page,
+      totalSeries: totalSeries ?? this.totalSeries,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
       followedSeriesIds: followedSeriesIds ?? this.followedSeriesIds,
       preferenceScores: preferenceScores ?? this.preferenceScores,

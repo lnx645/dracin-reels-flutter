@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/navigation/route_observer.dart';
+import '../../../../core/share/share_service.dart';
 import '../../../wallet/domain/repositories/wallet_repository.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/widgets/comments_sheet.dart';
@@ -9,6 +11,7 @@ import '../../domain/entities/episode.dart';
 import '../bloc/feed_bloc.dart';
 import '../bloc/feed_event.dart';
 import '../bloc/feed_state.dart';
+import '../../../player/presentation/widgets/episode_grid_sheet.dart';
 import '../widgets/action_rail.dart';
 import '../widgets/caption_block.dart';
 import '../widgets/feed_top_bar.dart';
@@ -259,33 +262,14 @@ class _FeedPageState extends State<FeedPage> with RouteAware {
         }
         final episodes = state.visibleEpisodes;
         if (state.errorMessage != null) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.cloud_off, size: 64),
-                  const SizedBox(height: 16),
-                  Text(
-                    state.errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => context
-                        .read<FeedBloc>()
-                        .add(const FeedStarted()),
-                    child: const Text('Coba Lagi'),
-                  ),
-                ],
-              ),
-            ),
+          return DracinErrorState(
+            message: state.errorMessage!,
+            onRetry: () =>
+                context.read<FeedBloc>().add(const FeedStarted()),
           );
         }
         if (state.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+          return const DracinReelSkeleton();
         }
         if (episodes.isEmpty) {
           return Column(
@@ -321,14 +305,23 @@ class _FeedPageState extends State<FeedPage> with RouteAware {
               child: PageView.builder(
                 scrollDirection: Axis.vertical,
                 controller: _controller,
-                itemCount: episodes.length,
+                itemCount: episodes.length + (state.isLoadingMore ? 1 : 0),
                 onPageChanged: (index) {
                   // Browsing saja: ganti episode di feed TIDAK mencatat
                   // riwayat. Riwayat hanya tercatat saat episode dibuka
                   // di halaman Player.
                   context.read<FeedBloc>().add(FeedIndexChanged(index));
+                  // Lazy: mendekati akhir daftar → muat halaman berikut.
+                  if (index >= episodes.length - 2) {
+                    context.read<FeedBloc>().add(const FeedLoadMore());
+                  }
                 },
                 itemBuilder: (context, index) {
+                  if (index >= episodes.length) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
                   final episode = episodes[index];
                   return ReelCard(
                     key: ValueKey<String>(episode.id),
@@ -481,67 +474,89 @@ class _ReelCardState extends State<ReelCard> {
   }
 
   void _showComments() {
+    // Id episode API (bukan nomor urut): nomor ≠ id API (mis. series 2
+    // episode nomor 3 = id API 12) — memakai nomor mengambil komentar
+    // episode lain. Fallback nomor hanya bila id API tidak diketahui.
+    final apiId = widget.episode.apiEpisodeId > 0
+        ? widget.episode.apiEpisodeId
+        : widget.episode.number;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => CommentsSheet(episodeId: widget.episode.number),
+      builder: (_) => CommentsSheet(episodeId: apiId),
     );
   }
 
-  void _showPlaceholderSheet(String title, String message) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(message, style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                  child: const Text('Tutup'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  /// Bagikan lewat share sheet sistem: judul series/episode yang benar,
+  /// teks saja (tanpa tautan karangan). Gagal → pesan asli.
+  Future<void> _shareEpisode() async {
+    final episode = widget.episode;
+    final seriesPart = episode.seriesTitle.trim().isEmpty
+        ? ''
+        : '${episode.seriesTitle} — ';
+    final text =
+        'Episode ${episode.number} | $seriesPart${episode.title}\n'
+        'Tonton di Dracin Reels';
+    try {
+      await DracinShare.shareText(text);
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
   void _showEpisodeList() {
     // Hanya episode series kartu ini (bukan campuran semua series
-    // seperti sheet lama — konsisten dengan daftar Player).
+    // seperti sheet lama — konsisten dengan daftar Player), dalam
+    // pola grid referensi: 5 kolom + tab rentang + ceklis tontonan.
+    final seen = <int>{};
     final seriesEpisodes = context
         .read<FeedBloc>()
         .state
         .episodes
         .where((item) => item.seriesId == widget.episode.seriesId)
+        .where((item) => seen.add(item.apiEpisodeId))
         .toList()
       ..sort((a, b) => a.number.compareTo(b.number));
+    final watched = <int>{
+      for (final entry in context.read<WalletBloc>().state.historyItems)
+        if (entry.seriesId == widget.episode.seriesId &&
+            (entry.positionSeconds > 0 || entry.finished))
+          entry.episodeId,
+    };
+    final seriesTitle = seriesEpisodes.isEmpty
+        ? widget.episode.seriesTitle
+        : seriesEpisodes.first.seriesTitle;
     showModalBottomSheet<void>(
       context: context,
-      builder: (sheetContext) {
-        return ListView(
-          shrinkWrap: true,
-          children: seriesEpisodes.map((episode) {
-            return ListTile(
-              title: Text('Episode ${episode.number} - ${episode.title}'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openPlayer(episode.id);
-              },
-            );
-          }).toList(),
-        );
-      },
+      isScrollControlled: true,
+      builder: (sheetContext) => EpisodeGridSheet(
+        episodes: seriesEpisodes
+            .map(
+              (episode) => EpisodeTileData(
+                id: episode.apiEpisodeId,
+                number: episode.number,
+                locked: episode.locked,
+              ),
+            )
+            .toList(),
+        seriesTitle: seriesTitle,
+        statusLine: 'Total ${seriesEpisodes.length} episode',
+        coverUrl: '',
+        watchedIds: watched,
+        onTapEpisode: (tile) {
+          Navigator.of(sheetContext).pop();
+          final target = seriesEpisodes.firstWhere(
+            (item) => item.apiEpisodeId == tile.id,
+            orElse: () => widget.episode,
+          );
+          _openPlayer(target.id);
+        },
+      ),
     );
   }
 
@@ -585,10 +600,7 @@ class _ReelCardState extends State<ReelCard> {
               episode: episode,
               onLike: _toggleLike,
               onComment: _showComments,
-              onShare: () => _showPlaceholderSheet(
-                'Bagikan',
-                'Bagikan episode ini menyusul (UI saja).',
-              ),
+              onShare: _shareEpisode,
               onBookmark: _toggleBookmark,
             ),
           ),

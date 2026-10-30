@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/design/widgets.dart';
 import '../../../../core/session/session_cubit.dart';
-import '../../../admin/presentation/pages/admin_series_page.dart';
+import '../../../admin/presentation/pages/admin_dashboard_page.dart';
 import '../../../wallet/presentation/pages/rewards_page.dart';
 
 /// Layar notifikasi: placeholder jujur. Notifikasi DITUNDA uwa:
@@ -30,7 +31,9 @@ class NotificationsPage extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            OutlinedButton(
+            DracinButton(
+              label: 'Lihat Hadiah',
+              variant: DracinButtonVariant.ghost,
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -38,19 +41,19 @@ class NotificationsPage extends StatelessWidget {
                   ),
                 );
               },
-              child: const Text('Lihat Hadiah'),
             ),
             if (session.isAdmin) ...<Widget>[
               const SizedBox(height: 12),
-              OutlinedButton(
+              DracinButton(
+                label: 'Panel Admin',
+                variant: DracinButtonVariant.ghost,
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => const AdminSeriesPage(),
+                      builder: (_) => const AdminDashboardPage(),
                     ),
                   );
                 },
-                child: const Text('Panel Admin'),
               ),
             ],
           ],

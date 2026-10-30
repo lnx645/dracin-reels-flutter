@@ -8,6 +8,12 @@ class FeedStarted extends FeedEvent {
   const FeedStarted();
 }
 
+/// Muat halaman feed berikutnya (lazy): dipicu saat kartu mendekati
+/// akhir daftar. Bloc mengabaikannya bila sedang memuat / sudah habis.
+class FeedLoadMore extends FeedEvent {
+  const FeedLoadMore();
+}
+
 class FeedLikeToggled extends FeedEvent {
   const FeedLikeToggled(this.id);
 

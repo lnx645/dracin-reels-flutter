@@ -51,6 +51,24 @@ class MainActivity : FlutterActivity() {
                         dir.mkdirs()
                         result.success(dir.absolutePath)
                     }
+                    "shareText" -> {
+                        // Share sheet sistem (chooser): teks saja, tanpa
+                        // tautan karangan. Dipakai tombol Bagikan di feed
+                        // dan Player sebagai pengganti sheet placeholder.
+                        val text = call.arguments as? String
+                        if (text.isNullOrEmpty()) {
+                            result.error("empty", "Teks bagikan kosong.", null)
+                        } else {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            startActivity(
+                                Intent.createChooser(intent, "Bagikan"),
+                            )
+                            result.success(null)
+                        }
+                    }
                     "installApk" -> {
                         val path = call.arguments as? String
                         if (path.isNullOrEmpty()) {

@@ -58,6 +58,69 @@ class SeriesRepositoryImpl implements SeriesRepository {
   }
 
   @override
+  Future<SeriesPage> getSeriesPage({
+    int? genreId,
+    String? query,
+    required int page,
+    required int limit,
+  }) async {
+    final params = <String, String>{
+      'page': '$page',
+      'limit': '$limit',
+    };
+    if (genreId != null) {
+      params['genre_id'] = '$genreId';
+    }
+    final queryString = params.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join('&');
+    final result = await _api.getPage('/series?$queryString');
+    var list = result.data
+        .whereType<Map<String, dynamic>>()
+        .map(Series.fromJson)
+        .toList();
+    if (genreId != null && list.any((s) => s.genres.isNotEmpty)) {
+      list = list
+          .where(
+            (series) => series.genres.any((genre) => genre.id == genreId),
+          )
+          .toList();
+    }
+    if (query != null && query.trim().isNotEmpty) {
+      final needle = query.trim().toLowerCase();
+      list = list
+          .where(
+            (series) =>
+                series.title.toLowerCase().contains(needle) ||
+                series.description.toLowerCase().contains(needle),
+          )
+          .toList();
+    }
+    return SeriesPage(series: list, total: result.total);
+  }
+
+  @override
+  Future<SeriesRatingSummary> getRating(int seriesId) async {
+    final data = await _api.getJson('/series/$seriesId/ratings');
+    if (data is Map<String, dynamic>) {
+      return SeriesRatingSummary.fromJson(data);
+    }
+    throw const ApiException('Format rating tidak dikenali.');
+  }
+
+  @override
+  Future<SeriesRatingSummary> rateSeries(int seriesId, int stars) async {
+    final data = await _api.postJson(
+      '/series/$seriesId/ratings',
+      <String, dynamic>{'stars': stars},
+    );
+    if (data is Map<String, dynamic>) {
+      return SeriesRatingSummary.fromJson(data);
+    }
+    throw const ApiException('Format rating tidak dikenali.');
+  }
+
+  @override
   Future<List<Genre>> getGenres() async {
     final data = await _api.getJson('/genres');
     if (data is! List) {

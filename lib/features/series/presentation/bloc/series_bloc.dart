@@ -12,6 +12,12 @@ class SeriesListStarted extends SeriesListEvent {
   const SeriesListStarted();
 }
 
+/// Muat halaman series berikutnya (lazy Jelajahi). Diabaikan bila
+/// sedang memuat / sudah habis.
+class SeriesListMoreRequested extends SeriesListEvent {
+  const SeriesListMoreRequested();
+}
+
 class SeriesListGenreChanged extends SeriesListEvent {
   const SeriesListGenreChanged(this.genreId);
 
@@ -54,6 +60,9 @@ class SeriesListState {
     this.query = '',
     this.sort = SeriesSort.none,
     this.isLoading = false,
+    this.isLoadingMore = false,
+    this.page = 1,
+    this.total = 0,
     this.errorMessage,
   });
 
@@ -63,6 +72,14 @@ class SeriesListState {
   final String query;
   final SeriesSort sort;
   final bool isLoading;
+  final bool isLoadingMore;
+  final int page;
+  final int total;
+
+  /// Masih ada halaman berikut (halaman * limit < total meta).
+  bool get hasMore => total > 0 && page * _pageSize < total;
+
+  static const int _pageSize = 20;
 
   /// Pesan error ASLI dari request API terakhir.
   final String? errorMessage;
@@ -75,6 +92,9 @@ class SeriesListState {
     String? query,
     SeriesSort? sort,
     bool? isLoading,
+    bool? isLoadingMore,
+    int? page,
+    int? total,
     String? errorMessage,
     bool clearError = false,
   }) {
@@ -86,6 +106,9 @@ class SeriesListState {
       query: query ?? this.query,
       sort: sort ?? this.sort,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      page: page ?? this.page,
+      total: total ?? this.total,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
   }
@@ -94,6 +117,7 @@ class SeriesListState {
 class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
   SeriesListBloc(this._repository) : super(const SeriesListState()) {
     on<SeriesListStarted>(_onStarted);
+    on<SeriesListMoreRequested>(_onMore);
     on<SeriesListGenreChanged>(_onGenreChanged);
     on<SeriesListQueryChanged>(_onQueryChanged);
     on<SeriesListSortChanged>(_onSortChanged);
@@ -101,42 +125,91 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
 
   final SeriesRepository _repository;
 
+  /// Urut sisi klien (API belum punya param urut). Tiebreak id
+  /// supaya urutan deterministis, bukan acak.
+  List<Series> _sorted(List<Series> list, SeriesSort sort) {
+    final sorted = List<Series>.from(list);
+    switch (sort) {
+      case SeriesSort.rating:
+        sorted.sort((a, b) {
+          final byRating = b.rating.compareTo(a.rating);
+          return byRating != 0 ? byRating : a.id.compareTo(b.id);
+        });
+      case SeriesSort.newest:
+        sorted.sort((a, b) {
+          final aDate = a.createdAt;
+          final bDate = b.createdAt;
+          if (aDate == null && bDate == null) {
+            return a.id.compareTo(b.id);
+          }
+          if (aDate == null) {
+            return 1;
+          }
+          if (bDate == null) {
+            return -1;
+          }
+          final byDate = bDate.compareTo(aDate);
+          return byDate != 0 ? byDate : a.id.compareTo(b.id);
+        });
+      case SeriesSort.none:
+        break;
+    }
+    return sorted;
+  }
+
   Future<void> _reload(Emitter<SeriesListState> emit) async {
     try {
-      final list = await _repository.getSeries(
+      final result = await _repository.getSeriesPage(
         genreId: state.selectedGenreId,
         query: state.query.isEmpty ? null : state.query,
+        page: 1,
+        limit: SeriesListState._pageSize,
       );
-      // Urut sisi klien (API belum punya param urut). Tiebreak id
-      // supaya urutan deterministis, bukan acak.
-      switch (state.sort) {
-        case SeriesSort.rating:
-          list.sort((a, b) {
-            final byRating = b.rating.compareTo(a.rating);
-            return byRating != 0 ? byRating : a.id.compareTo(b.id);
-          });
-        case SeriesSort.newest:
-          list.sort((a, b) {
-            final aDate = a.createdAt;
-            final bDate = b.createdAt;
-            if (aDate == null && bDate == null) {
-              return a.id.compareTo(b.id);
-            }
-            if (aDate == null) {
-              return 1;
-            }
-            if (bDate == null) {
-              return -1;
-            }
-            final byDate = bDate.compareTo(aDate);
-            return byDate != 0 ? byDate : a.id.compareTo(b.id);
-          });
-        case SeriesSort.none:
-          break;
-      }
-      emit(state.copyWith(series: list, isLoading: false, clearError: true));
+      emit(
+        state.copyWith(
+          series: _sorted(result.series, state.sort),
+          page: 1,
+          total: result.total,
+          isLoading: false,
+          clearError: true,
+        ),
+      );
     } on ApiException catch (error) {
       emit(state.copyWith(isLoading: false, errorMessage: error.message));
+    }
+  }
+
+  Future<void> _onMore(
+    SeriesListMoreRequested event,
+    Emitter<SeriesListState> emit,
+  ) async {
+    if (state.isLoading || state.isLoadingMore || !state.hasMore) {
+      return;
+    }
+    emit(state.copyWith(isLoadingMore: true));
+    try {
+      final result = await _repository.getSeriesPage(
+        genreId: state.selectedGenreId,
+        query: state.query.isEmpty ? null : state.query,
+        page: state.page + 1,
+        limit: SeriesListState._pageSize,
+      );
+      final seen = state.series.map((s) => s.id).toSet();
+      final merged = <Series>[
+        ...state.series,
+        ...result.series.where((s) => seen.add(s.id)),
+      ];
+      emit(
+        state.copyWith(
+          series: _sorted(merged, state.sort),
+          page: state.page + 1,
+          total: result.total,
+          isLoadingMore: false,
+        ),
+      );
+    } on ApiException {
+      // Gagal halaman berikut = daftar lama tetap tampil.
+      emit(state.copyWith(isLoadingMore: false));
     }
   }
 
