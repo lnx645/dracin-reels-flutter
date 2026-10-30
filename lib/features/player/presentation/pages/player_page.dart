@@ -1092,25 +1092,15 @@ class _PlayerPageState extends State<PlayerPage> {
           ),
         ),
     ];
-    // Deskripsi diperluas bisa meluber dari area bawah yang tetap:
-    // saat itu kolom bawah boleh di-scroll (hanya saat diperluas).
-    if (_descriptionExpanded) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 76, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: content,
-        ),
-      );
-    }
+    // Kolom konten saja (tanpa Spacer/scroll sendiri): area bawah di
+    // build membungkusnya dengan scroll + gap tetap, jadi layar
+    // pendek (16:9 lama) ikut aman — konten meluber = bisa di-scroll,
+    // bukan error overflow merah.
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 76, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Spacer(),
-          ...content,
-        ],
+        children: content,
       ),
     );
   }
@@ -1405,14 +1395,19 @@ class _PlayerPageState extends State<PlayerPage> {
                         Expanded(
                           child: Stack(
                             children: <Widget>[
-                              Column(
-                                children: <Widget>[
-                                  SizedBox(
-                                    height: screenHeight * 0.02,
-                                  ),
-                                  _fullscreenPill(),
-                                  Expanded(
-                                    child: _infoSection(
+                              SingleChildScrollView(
+                                child: Column(
+                                  children: <Widget>[
+                                    SizedBox(
+                                      height: screenHeight * 0.02,
+                                    ),
+                                    _fullscreenPill(),
+                                    // Gap pil → judul ~13,5% tinggi
+                                    // (judul referensi ~81,7%).
+                                    SizedBox(
+                                      height: screenHeight * 0.135,
+                                    ),
+                                    _infoSection(
                                       episode,
                                       locked,
                                       seriesEpisodes,
@@ -1423,8 +1418,8 @@ class _PlayerPageState extends State<PlayerPage> {
                                               .freeEpisodeCount ??
                                           0,
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                               // Rel di kanan bawah video (di luar area
                               // video, sejajar kolom bawah).
