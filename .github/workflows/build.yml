@@ -35,8 +35,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk dracin-reels.apk
-          if gh release view v0.1.0 >/dev/null 2>&1; then
-            gh release upload v0.1.0 dracin-reels.apk --clobber
+          if gh release view v0.2.0 >/dev/null 2>&1; then
+            gh release upload v0.2.0 dracin-reels.apk --clobber
           else
-            gh release create v0.1.0 dracin-reels.apk --title "v0.1.0" --notes "Dracin Reels Flutter - UI saja, video belum memutar."
+            gh release create v0.2.0 dracin-reels.apk --title "v0.2.0" --notes "Dracin Reels Flutter v0.2.0 - fitur Melolo fase 2 + mode Admin + polish UI. Video belum memutar; pembayaran/iklan beneran belum ada."
           fi

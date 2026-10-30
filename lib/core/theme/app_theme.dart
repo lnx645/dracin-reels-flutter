@@ -75,6 +75,8 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accent,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.surface,
+          disabledForegroundColor: AppColors.textHint,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
@@ -83,6 +85,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
+          disabledForegroundColor: AppColors.textHint,
           side: const BorderSide(color: AppColors.border),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -93,6 +96,14 @@ class AppTheme {
         backgroundColor: AppColors.surface,
         selectedItemColor: Colors.white,
         unselectedItemColor: AppColors.textHint,
+        selectedLabelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
         type: BottomNavigationBarType.fixed,
       ),
       inputDecorationTheme: InputDecorationTheme(

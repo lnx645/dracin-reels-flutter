@@ -33,13 +33,28 @@ class BookmarkView extends StatelessWidget {
       body: BlocBuilder<BookmarkBloc, BookmarkState>(
         builder: (context, state) {
           if (state.episodes.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Belum ada episode tersimpan. Ketuk Simpan di feed '
-                  'untuk menambahkannya ke sini.',
-                  textAlign: TextAlign.center,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const <Widget>[
+                    Icon(Icons.bookmark_outline, size: 64),
+                    SizedBox(height: 16),
+                    Text(
+                      'Belum ada episode tersimpan.',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Ketuk Simpan di feed untuk menambahkannya ke sini.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
               ),
             );

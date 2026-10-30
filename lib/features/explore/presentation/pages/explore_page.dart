@@ -3,6 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../feed/domain/entities/episode.dart';
 import '../../../feed/domain/repositories/episode_repository.dart';
+import '../../../home/presentation/widgets/series_card.dart';
+import '../../../series/domain/repositories/series_repository.dart';
+import '../../../series/presentation/bloc/series_bloc.dart';
+import '../../../series/presentation/pages/series_detail_page.dart';
 import '../bloc/explore_bloc.dart';
 
 class ExplorePage extends StatelessWidget {
@@ -52,6 +56,53 @@ class ExploreView extends StatelessWidget {
                 prefixIcon: Icon(Icons.search),
               ),
             ),
+            const SizedBox(height: 16),
+            Text('Series', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 170,
+              child: BlocProvider(
+                create: (_) => SeriesListBloc(
+                  context.read<SeriesRepository>(),
+                )..add(const SeriesListStarted()),
+                child: BlocBuilder<SeriesListBloc, SeriesListState>(
+                  builder: (context, seriesState) {
+                    if (seriesState.series.isEmpty) {
+                      return const Center(
+                        child: Text('Belum ada series.'),
+                      );
+                    }
+                    return ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: seriesState.series.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final series = seriesState.series[index];
+                        return SizedBox(
+                          width: 130,
+                          child: SeriesMiniCard(
+                            series: series,
+                            onOpen: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => SeriesDetailPage(
+                                    seriesId: series.id,
+                                    onOpenEpisode: onOpenEpisode,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Episode', style: theme.textTheme.titleSmall),
             const SizedBox(height: 12),
             Expanded(
               child: BlocBuilder<ExploreBloc, ExploreState>(

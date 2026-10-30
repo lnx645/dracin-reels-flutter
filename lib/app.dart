@@ -1,32 +1,80 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'core/api/api_client.dart';
+import 'core/session/session_cubit.dart';
 import 'core/theme/app_theme.dart';
+import 'features/admin/domain/repositories/admin_repository.dart';
+import 'features/admin/presentation/pages/login_page.dart';
 import 'features/create/presentation/pages/create_page.dart';
 import 'features/explore/presentation/pages/explore_page.dart';
 import 'features/feed/domain/repositories/episode_repository.dart';
 import 'features/feed/presentation/bloc/feed_bloc.dart';
 import 'features/feed/presentation/bloc/feed_event.dart';
-import 'features/feed/presentation/pages/feed_page.dart';
+import 'features/home/presentation/pages/home_page.dart';
 import 'features/notifications/presentation/pages/notifications_page.dart';
 import 'features/profile/presentation/pages/profile_page.dart';
+import 'features/series/domain/repositories/series_repository.dart';
+import 'features/wallet/domain/repositories/wallet_repository.dart';
+import 'features/wallet/presentation/bloc/wallet_bloc.dart';
+import 'features/wallet/presentation/pages/rewards_page.dart';
 
 class DracinApp extends StatelessWidget {
-  const DracinApp({required this.repository, super.key});
+  const DracinApp({
+    required this.repository,
+    required this.apiClient,
+    required this.sessionCubit,
+    required this.walletBloc,
+    required this.walletRepository,
+    required this.seriesRepository,
+    required this.adminRepository,
+    super.key,
+  });
 
   final EpisodeRepository repository;
+  final ApiClient apiClient;
+  final SessionCubit sessionCubit;
+  final WalletBloc walletBloc;
+  final WalletRepository walletRepository;
+  final SeriesRepository seriesRepository;
+  final AdminRepository adminRepository;
 
   @override
   Widget build(BuildContext context) {
-    return RepositoryProvider<EpisodeRepository>.value(
-      value: repository,
-      child: BlocProvider(
-        create: (_) => FeedBloc(repository)..add(const FeedStarted()),
-        child: MaterialApp(
-          title: 'Dracin Reels',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.dark,
-          home: const MainShell(),
+    return MultiRepositoryProvider(
+      providers: <RepositoryProvider<dynamic>>[
+        RepositoryProvider<EpisodeRepository>.value(value: repository),
+        RepositoryProvider<ApiClient>.value(value: apiClient),
+        RepositoryProvider<WalletRepository>.value(value: walletRepository),
+        RepositoryProvider<SeriesRepository>.value(value: seriesRepository),
+        RepositoryProvider<AdminRepository>.value(value: adminRepository),
+      ],
+      child: MultiBlocProvider(
+        providers: <BlocProvider<dynamic>>[
+          BlocProvider<SessionCubit>.value(value: sessionCubit),
+          BlocProvider<WalletBloc>.value(value: walletBloc),
+          BlocProvider<FeedBloc>(
+            create: (_) => FeedBloc(repository)..add(const FeedStarted()),
+          ),
+        ],
+        child: BlocListener<SessionCubit, SessionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status,
+          listener: (context, state) {
+            // Sesi berubah (masuk/keluar) → muat ulang dompet dari sumber
+            // yang benar (API bila masuk, lokal bila keluar).
+            context.read<WalletBloc>().add(const WalletRefreshed());
+          },
+          child: MaterialApp(
+            title: 'Dracin Reels',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.dark,
+            home: const MainShell(),
+            routes: <String, WidgetBuilder>{
+              '/login': (_) => const LoginPage(),
+              '/rewards': (_) => const RewardsPage(),
+            },
+          ),
         ),
       ),
     );
@@ -45,15 +93,22 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
+  /// Bertambah setiap kali ada episode yang dibuka dari luar feed,
+  /// supaya Beranda berpindah ke mode Reels.
+  int _reelsNonce = 0;
+
   void _openEpisode(String episodeId) {
     context.read<FeedBloc>().add(FeedEpisodeJumped(episodeId));
-    setState(() => _index = 0);
+    setState(() {
+      _index = 0;
+      _reelsNonce++;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      const FeedPage(),
+      HomePage(onOpenEpisode: _openEpisode, reelsNonce: _reelsNonce),
       ExplorePage(onOpenEpisode: _openEpisode),
       const CreatePage(),
       const NotificationsPage(),

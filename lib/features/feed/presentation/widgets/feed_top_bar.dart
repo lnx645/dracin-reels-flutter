@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../wallet/presentation/bloc/wallet_bloc.dart';
+import '../../../wallet/presentation/pages/rewards_page.dart';
 import '../bloc/feed_event.dart';
 
 /// Bilah atas feed: judul aplikasi, pil koin, tab Untuk Anda/Mengikuti.
+/// Pil koin menampilkan saldo dompet (API bila masuk, lokal bila belum)
+/// dan membuka halaman Dompet & Hadiah saat diketuk.
 class FeedTopBar extends StatelessWidget {
   const FeedTopBar({
     required this.tab,
@@ -44,34 +49,47 @@ class FeedTopBar extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        Icons.monetization_on,
-                        size: 18,
-                        color: AppColors.accent,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        '100 Koin',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                BlocBuilder<WalletBloc, WalletState>(
+                  builder: (context, wallet) {
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const RewardsPage(),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(
+                              Icons.monetization_on,
+                              size: 18,
+                              color: AppColors.accent,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${wallet.balance} Koin',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ],
             ),

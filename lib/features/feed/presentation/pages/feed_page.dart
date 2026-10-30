@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../wallet/domain/repositories/wallet_repository.dart';
+import '../../../wallet/presentation/bloc/wallet_bloc.dart';
+import '../../../wallet/presentation/widgets/comments_sheet.dart';
 import '../../domain/entities/episode.dart';
 import '../bloc/feed_bloc.dart';
 import '../bloc/feed_event.dart';
@@ -66,9 +71,18 @@ class _FeedPageState extends State<FeedPage> {
                 scrollDirection: Axis.vertical,
                 controller: _controller,
                 itemCount: episodes.length,
-                onPageChanged: (index) => context.read<FeedBloc>().add(
-                      FeedIndexChanged(index),
-                    ),
+                onPageChanged: (index) {
+                  context.read<FeedBloc>().add(FeedIndexChanged(index));
+                  final episode = episodes[index];
+                  // Otomatis tercatat ke riwayat (lokal + API bila masuk).
+                  context.read<WalletBloc>().add(
+                        WalletContinueSaved(
+                          episodeId: episode.number,
+                          title: episode.title,
+                          number: episode.number,
+                        ),
+                      );
+                },
                 itemBuilder: (context, index) {
                   return ReelCard(episode: episodes[index]);
                 },
@@ -94,6 +108,38 @@ class ReelCard extends StatefulWidget {
 
 class _ReelCardState extends State<ReelCard> {
   bool _isPlaying = false;
+
+  void _toggleLike() {
+    final episode = widget.episode;
+    context.read<FeedBloc>().add(FeedLikeToggled(episode.id));
+    // Sinkronisasi API best-effort (id API = nomor episode series Qin).
+    unawaited(
+      context.read<WalletRepository>().toggleLike(
+            episode.number,
+            !episode.isLiked,
+          ),
+    );
+  }
+
+  void _toggleBookmark() {
+    final episode = widget.episode;
+    context.read<FeedBloc>().add(FeedBookmarkToggled(episode.id));
+    // Bookmark API per series (series Qin id 1).
+    unawaited(
+      context.read<WalletRepository>().toggleBookmark(
+            1,
+            !episode.isBookmarked,
+          ),
+    );
+  }
+
+  void _showComments() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => CommentsSheet(episodeId: widget.episode.number),
+    );
+  }
 
   void _togglePlay() {
     setState(() => _isPlaying = !_isPlaying);
@@ -158,8 +204,7 @@ class _ReelCardState extends State<ReelCard> {
     final episode = widget.episode;
     return GestureDetector(
       onTap: _togglePlay,
-      onDoubleTap: () =>
-          context.read<FeedBloc>().add(FeedLikeToggled(episode.id)),
+      onDoubleTap: _toggleLike,
       child: Stack(
         children: <Widget>[
           Positioned.fill(
@@ -173,19 +218,13 @@ class _ReelCardState extends State<ReelCard> {
             bottom: 150,
             child: ActionRail(
               episode: episode,
-              onLike: () =>
-                  context.read<FeedBloc>().add(FeedLikeToggled(episode.id)),
-              onComment: () => _showPlaceholderSheet(
-                'Komentar',
-                'Komentar untuk episode ini menyusul (UI saja).',
-              ),
+              onLike: _toggleLike,
+              onComment: _showComments,
               onShare: () => _showPlaceholderSheet(
                 'Bagikan',
                 'Bagikan episode ini menyusul (UI saja).',
               ),
-              onBookmark: () => context
-                  .read<FeedBloc>()
-                  .add(FeedBookmarkToggled(episode.id)),
+              onBookmark: _toggleBookmark,
             ),
           ),
           Positioned(

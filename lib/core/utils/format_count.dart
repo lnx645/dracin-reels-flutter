@@ -17,3 +17,16 @@ String _oneDecimal(double value) {
   }
   return text.replaceFirst('.', ',');
 }
+
+/// Format rupiah tanpa desimal: 15000 -> "Rp15.000".
+String formatRupiah(int amount) {
+  final digits = amount.toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) {
+      buffer.write('.');
+    }
+    buffer.write(digits[i]);
+  }
+  return 'Rp${buffer.toString()}';
+}
