@@ -1,4 +1,4 @@
-import 'entities/episode.dart';
+import '../entities/episode.dart';
 
 /// Kontrak pengambilan dan perubahan episode. Implementasi hidup di data/.
 abstract class EpisodeRepository {

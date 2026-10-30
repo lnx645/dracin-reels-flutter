@@ -5,10 +5,9 @@ import '../datasources/sample_episode_datasource.dart';
 /// Implementasi repository di memori, dari datasource sampel.
 /// Nanti diganti implementasi API tanpa mengubah domain maupun UI.
 class EpisodeRepositoryImpl implements EpisodeRepository {
-  EpisodeRepositoryImpl(this._datasource)
-      : _episodes = List<Episode>.of(_datasource.getSampleEpisodes());
+  EpisodeRepositoryImpl(SampleEpisodeDataSource datasource)
+      : _episodes = List<Episode>.of(datasource.getSampleEpisodes());
 
-  final SampleEpisodeDataSource _datasource;
   final List<Episode> _episodes;
 
   @override

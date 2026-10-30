@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../feed/domain/entities/episode.dart';
-import '../../feed/domain/repositories/episode_repository.dart';
+import '../../../feed/domain/entities/episode.dart';
+import '../../../feed/domain/repositories/episode_repository.dart';
 
 abstract class BookmarkEvent {
   const BookmarkEvent();

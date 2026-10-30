@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../bookmark/presentation/pages/bookmark_page.dart';
-import '../../feed/domain/repositories/episode_repository.dart';
+import '../../../bookmark/presentation/pages/bookmark_page.dart';
+import '../../../feed/domain/repositories/episode_repository.dart';
 import '../bloc/profile_bloc.dart';
 
 class ProfilePage extends StatelessWidget {

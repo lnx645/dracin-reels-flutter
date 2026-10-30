@@ -5,10 +5,10 @@ import '../../domain/entities/episode.dart';
 import '../bloc/feed_bloc.dart';
 import '../bloc/feed_event.dart';
 import '../bloc/feed_state.dart';
-import 'widgets/action_rail.dart';
-import 'widgets/caption_block.dart';
-import 'widgets/episode_cover.dart';
-import 'widgets/feed_top_bar.dart';
+import '../widgets/action_rail.dart';
+import '../widgets/caption_block.dart';
+import '../widgets/episode_cover.dart';
+import '../widgets/feed_top_bar.dart';
 
 class FeedPage extends StatefulWidget {
   const FeedPage({super.key});
