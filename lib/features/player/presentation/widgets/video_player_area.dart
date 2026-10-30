@@ -27,6 +27,7 @@ class VideoPlayerArea extends StatefulWidget {
     required this.playRequest,
     required this.onPlayingChanged,
     this.localFile,
+    this.posterUrl = '',
     super.key,
   });
 
@@ -36,6 +37,12 @@ class VideoPlayerArea extends StatefulWidget {
   /// File lokal yang baru dipilih (pratinjau formulir admin, sebelum
   /// diunggah). Bila ada, file inilah yang diputar, bukan [videoUrl].
   final File? localFile;
+
+  /// Poster (cover series) yang tampil sebelum video mulai diputar —
+  /// aturan fallback thumbnail: sebelum frame pertama, area Player
+  /// memakai cover series, bukan hitam kosong. Hilang begitu video
+  /// benar-benar memutar; tidak pernah menutupi video yang jalan.
+  final String posterUrl;
 
   /// Status putar yang diminta tombol Putar/Jeda di luar area video
   /// (true = putar, false = jeda). Perubahan di sini memutar/menjeda
@@ -280,6 +287,13 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     }
     final durationMs = _duration.inMilliseconds;
     final positionMs = _position.inMilliseconds.clamp(0, durationMs);
+    // Poster cover series: hanya sebelum video mulai (posisi 0 dan
+    // belum memutar). Begitu video jalan, poster hilang; jeda di
+    // tengah video menampilkan frame video, bukan poster.
+    final resolvedPoster = resolveMediaUrl(widget.posterUrl);
+    final showPoster = resolvedPoster.isNotEmpty &&
+        !controller.value.isPlaying &&
+        _position == Duration.zero;
     return Container(
       color: Colors.black,
       child: Stack(
@@ -290,6 +304,15 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
               child: VideoPlayer(controller),
             ),
           ),
+          if (showPoster)
+            Positioned.fill(
+              child: Image.network(
+                resolvedPoster,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox.shrink(),
+              ),
+            ),
           Positioned.fill(
             child: GestureDetector(
               onTap: _togglePlay,

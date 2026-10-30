@@ -3,7 +3,7 @@
 Aplikasi reels video pendek ala TikTok, ditulis ulang dengan Flutter
 (menggantikan versi Rust/egui yang diparkir — repo Rust tidak dihapus).
 
-## Status jujur v0.2.3
+## Status jujur v0.2.4
 
 - **Video MEMUTAR di halaman Player** (file video langsung atau HLS
   dari `video_url` episode — path upload `media/...` di-resolve lewat
@@ -11,6 +11,20 @@ Aplikasi reels video pendek ala TikTok, ditulis ulang dengan Flutter
   Episode terkunci tetap tidak memutar. Tautan halaman web (bukan file
   video) tidak dapat diputar — gagal ditampilkan sebagai error asli +
   Coba Lagi, bukan pura-pura memutar.
+- **Fallback thumbnail (dikunci):** thumbnail episode bila ada;
+  bila null/kosong → cover series (juga di poster area Player sebelum
+  video mulai); bila keduanya tidak ada → placeholder gradasi rapi
+  bertitel. Semua URL relatif di-resolve lewat basis media proxy.
+- **Genre + tagline:** form admin series punya field Tagline +
+  pemilih genre multi-pilih (dari GET /genres, kirim `genre_ids`
+  saat simpan); detail series menampilkan tagline di bawah judul
+  (disembunyikan bila kosong) + chip genre (tidak ada chip palsu
+  bila array kosong); Jelajahi punya filter chip genre (Semua +
+  tiap genre) yang bekerja bersama kolom kata kunci, via
+  `?genre_id=<id>` ke API dengan fallback filter lokal yang aman
+  (hanya bila respons membawa data genre). Field `tagline` sudah
+  dikembalikan backend; array `genres` per series masih menunggu
+  backend (form + filter tetap jalan tanpa crash).
 - **Fitur Melolo (fase 2) SUDAH jalan — lokal dulu, API bila masuk:**
   detail series + daftar episode (Gratis/Terkunci + harga koin),
   dompet koin (saldo di header, check-in harian 1x/hari),

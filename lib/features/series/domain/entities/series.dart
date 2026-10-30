@@ -10,6 +10,7 @@ class Series {
     required this.freeEpisodeCount,
     required this.rating,
     required this.genres,
+    this.tagline = '',
   });
 
   final int id;
@@ -21,6 +22,11 @@ class Series {
   final int freeEpisodeCount;
   final double rating;
   final List<Genre> genres;
+
+  /// Tagline dari API (kontrak baru). Bila backend belum mengembalikan
+  /// tagline, nilainya '' — UI menyembunyikan baris tagline, bukan
+  /// menampilkan teks contoh.
+  final String tagline;
 
   factory Series.fromJson(Map<String, dynamic> json) {
     final genresJson = json['genres'];
@@ -43,6 +49,7 @@ class Series {
           ? json['cover_url'] as String
           : '',
       status: json['status'] is String ? json['status'] as String : '',
+      tagline: json['tagline'] is String ? json['tagline'] as String : '',
       totalEpisode: json['total_episode'] is int
           ? json['total_episode'] as int
           : 0,

@@ -8,6 +8,7 @@ class AdminSeriesForm {
     required this.genreIds,
     required this.freeEpisodeCount,
     required this.status,
+    this.tagline = '',
   });
 
   final int? id;
@@ -18,6 +19,10 @@ class AdminSeriesForm {
   final int freeEpisodeCount;
   final String status;
 
+  /// Tagline (kontrak baru backend). Bila backend belum menerima field
+  /// ini, field ekstra ini diabaikan server — form tetap jalan.
+  final String tagline;
+
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'title': title,
@@ -26,6 +31,7 @@ class AdminSeriesForm {
       'genre_ids': genreIds,
       'free_episode_count': freeEpisodeCount,
       'status': status,
+      'tagline': tagline,
     };
   }
 }

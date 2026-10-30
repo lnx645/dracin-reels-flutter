@@ -13,9 +13,10 @@ class SeriesListStarted extends SeriesListEvent {
 }
 
 class SeriesListGenreChanged extends SeriesListEvent {
-  const SeriesListGenreChanged(this.slug);
+  const SeriesListGenreChanged(this.genreId);
 
-  final String? slug;
+  /// Id genre dari GET /genres; null = Semua.
+  final int? genreId;
 }
 
 class SeriesListQueryChanged extends SeriesListEvent {
@@ -28,7 +29,7 @@ class SeriesListState {
   const SeriesListState({
     this.series = const <Series>[],
     this.genres = const <Genre>[],
-    this.selectedGenre,
+    this.selectedGenreId,
     this.query = '',
     this.isLoading = false,
     this.errorMessage,
@@ -36,7 +37,7 @@ class SeriesListState {
 
   final List<Series> series;
   final List<Genre> genres;
-  final String? selectedGenre;
+  final int? selectedGenreId;
   final String query;
   final bool isLoading;
 
@@ -46,7 +47,7 @@ class SeriesListState {
   SeriesListState copyWith({
     List<Series>? series,
     List<Genre>? genres,
-    String? selectedGenre,
+    int? selectedGenreId,
     bool clearGenre = false,
     String? query,
     bool? isLoading,
@@ -56,7 +57,8 @@ class SeriesListState {
     return SeriesListState(
       series: series ?? this.series,
       genres: genres ?? this.genres,
-      selectedGenre: clearGenre ? null : selectedGenre ?? this.selectedGenre,
+      selectedGenreId:
+          clearGenre ? null : selectedGenreId ?? this.selectedGenreId,
       query: query ?? this.query,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
@@ -76,7 +78,7 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
   Future<void> _reload(Emitter<SeriesListState> emit) async {
     try {
       final list = await _repository.getSeries(
-        genreSlug: state.selectedGenre,
+        genreId: state.selectedGenreId,
         query: state.query.isEmpty ? null : state.query,
       );
       emit(state.copyWith(series: list, isLoading: false, clearError: true));
@@ -106,8 +108,8 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
   ) async {
     emit(
       state.copyWith(
-        selectedGenre: event.slug,
-        clearGenre: event.slug == null,
+        selectedGenreId: event.genreId,
+        clearGenre: event.genreId == null,
         isLoading: true,
         clearError: true,
       ),

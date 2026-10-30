@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../../../core/session/session_cubit.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../feed/domain/entities/episode.dart';
@@ -438,29 +439,50 @@ class _PlayerPageState extends State<PlayerPage> {
     SeriesEpisode? lockedDetail,
     SeriesEpisode? detail,
     bool detailLoading,
+    String coverUrl,
   ) {
     // ATURAN KEJUJURAN STATE (cacat kelas terburuk: ikon "memutar" tanpa
     // video jalan): area video TIDAK PERNAH menampilkan gradasi statis
     // berikon putar sebagai "sedang memutar".
-    // - Terkunci → hitam + gembok (video tidak pernah di-init).
-    // - Detail ada → pemutar beneran (loading = spinner, gagal = error).
-    // - Detail masih dimuat → spinner, bukan sampul.
+    // - Terkunci → cover series + gembok (video tidak pernah di-init).
+    // - Detail ada → pemutar beneran (poster cover sebelum frame
+    //   pertama, loading = spinner, gagal = error).
+    // - Detail masih dimuat → cover series + spinner, bukan gradasi.
     // - Detail sudah dimuat tapi episode tidak ada → state jujur
     //   "Video belum tersedia" dari VideoPlayerArea.
+    final resolvedCover = resolveMediaUrl(coverUrl);
     final Widget video;
     if (lockedDetail != null) {
-      video = Container(color: Colors.black);
+      video = resolvedCover.isEmpty
+          ? Container(color: Colors.black)
+          : Image.network(
+              resolvedCover,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) =>
+                  Container(color: Colors.black),
+            );
     } else if (detail != null) {
       video = VideoPlayerArea(
         key: ValueKey<String>('video-${detail.id}'),
         videoUrl: detail.videoUrl,
         playRequest: _playRequest,
         onPlayingChanged: _onPlayingChanged,
+        posterUrl: coverUrl,
       );
     } else if (detailLoading) {
-      video = Container(
-        color: Colors.black,
-        child: const Center(child: CircularProgressIndicator()),
+      video = Stack(
+        children: <Widget>[
+          if (resolvedCover.isNotEmpty)
+            Positioned.fill(
+              child: Image.network(
+                resolvedCover,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    Container(color: Colors.black),
+              ),
+            ),
+          const Center(child: CircularProgressIndicator()),
+        ],
       );
     } else {
       video = VideoPlayerArea(
@@ -860,6 +882,7 @@ class _PlayerPageState extends State<PlayerPage> {
                             detail,
                             detailState.detail == null &&
                                 detailState.errorMessage == null,
+                            detailState.detail?.series.coverUrl ?? '',
                           ),
                         ),
                         Expanded(

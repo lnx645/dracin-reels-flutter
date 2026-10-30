@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../../feed/domain/entities/episode.dart';
 import '../../../feed/domain/repositories/episode_repository.dart';
 import '../../../home/presentation/widgets/series_card.dart';
@@ -33,8 +34,12 @@ class ExploreView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
+    return BlocProvider(
+      create: (_) => SeriesListBloc(
+        context.read<SeriesRepository>(),
+      )..add(const SeriesListStarted()),
+      child: SafeArea(
+        child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -48,24 +53,58 @@ class ExploreView extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             TextField(
-              onChanged: (value) => context
-                  .read<ExploreBloc>()
-                  .add(ExploreQueryChanged(value)),
+              onChanged: (value) {
+                // Kata kunci bekerja bersama filter genre: episode di
+                // bawah disaring ExploreBloc, strip series disaring
+                // SeriesListBloc (genre + kata kunci).
+                context.read<ExploreBloc>().add(ExploreQueryChanged(value));
+                context
+                    .read<SeriesListBloc>()
+                    .add(SeriesListQueryChanged(value));
+              },
               decoration: const InputDecoration(
                 hintText: 'Cari judul drama atau episode...',
                 prefixIcon: Icon(Icons.search),
               ),
+            ),
+            const SizedBox(height: 12),
+            BlocBuilder<SeriesListBloc, SeriesListState>(
+              builder: (context, seriesState) {
+                if (seriesState.genres.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      _GenreFilterChip(
+                        label: 'Semua',
+                        selected: seriesState.selectedGenreId == null,
+                        onSelected: () => context
+                            .read<SeriesListBloc>()
+                            .add(const SeriesListGenreChanged(null)),
+                      ),
+                      ...seriesState.genres.map(
+                        (genre) => _GenreFilterChip(
+                          label: genre.name,
+                          selected:
+                              seriesState.selectedGenreId == genre.id,
+                          onSelected: () => context
+                              .read<SeriesListBloc>()
+                              .add(SeriesListGenreChanged(genre.id)),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
             Text('Series', style: theme.textTheme.titleSmall),
             const SizedBox(height: 8),
             SizedBox(
               height: 170,
-              child: BlocProvider(
-                create: (_) => SeriesListBloc(
-                  context.read<SeriesRepository>(),
-                )..add(const SeriesListStarted()),
-                child: BlocBuilder<SeriesListBloc, SeriesListState>(
+              child: BlocBuilder<SeriesListBloc, SeriesListState>(
                   builder: (context, seriesState) {
                     if (seriesState.errorMessage != null) {
                       return Center(
@@ -125,13 +164,14 @@ class ExploreView extends StatelessWidget {
                     );
                   },
                 ),
-              ),
             ),
             const SizedBox(height: 16),
             Text('Episode', style: theme.textTheme.titleSmall),
             const SizedBox(height: 12),
             Expanded(
-              child: BlocBuilder<ExploreBloc, ExploreState>(
+              child: BlocBuilder<SeriesListBloc, SeriesListState>(
+                builder: (context, seriesState) =>
+                    BlocBuilder<ExploreBloc, ExploreState>(
                 builder: (context, state) {
                   if (state.errorMessage != null) {
                     return Center(
@@ -180,31 +220,74 @@ class ExploreView extends StatelessWidget {
                     itemCount: state.episodes.length,
                     itemBuilder: (context, index) {
                       final episode = state.episodes[index];
+                      String coverUrl = '';
+                      for (final series in seriesState.series) {
+                        if (series.id == episode.seriesId) {
+                          coverUrl = series.coverUrl;
+                          break;
+                        }
+                      }
                       return _ExploreCard(
                         episode: episode,
+                        coverUrl: coverUrl,
                         onOpen: () => onOpenEpisode(episode.id),
                       );
                     },
                   );
                 },
+                ),
               ),
             ),
           ],
+        ),
         ),
       ),
     );
   }
 }
 
+class _GenreFilterChip extends StatelessWidget {
+  const _GenreFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onSelected(),
+      ),
+    );
+  }
+}
+
 class _ExploreCard extends StatelessWidget {
-  const _ExploreCard({required this.episode, required this.onOpen});
+  const _ExploreCard({
+    required this.episode,
+    required this.onOpen,
+    this.coverUrl = '',
+  });
 
   final Episode episode;
   final VoidCallback onOpen;
 
+  /// Cover series pemilik episode — header kartu memakai foto ini bila
+  /// ada (aturan fallback thumbnail); bila tidak ada, gradasi tetap.
+  final String coverUrl;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final resolvedCover = resolveMediaUrl(coverUrl);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -220,6 +303,19 @@ class _ExploreCard extends StatelessWidget {
           ),
           child: Stack(
             children: <Widget>[
+              if (resolvedCover.isNotEmpty)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      resolvedCover,
+                      fit: BoxFit.cover,
+                      // Gagal dimuat → gradasi di bawah tetap tampil.
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
               const Center(
                 child: Icon(Icons.play_arrow, size: 36, color: Colors.white),
               ),

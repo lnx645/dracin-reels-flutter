@@ -12,10 +12,10 @@ class SeriesRepositoryImpl implements SeriesRepository {
   final ApiClient _api;
 
   @override
-  Future<List<Series>> getSeries({String? genreSlug, String? query}) async {
+  Future<List<Series>> getSeries({int? genreId, String? query}) async {
     final params = <String, String>{};
-    if (genreSlug != null && genreSlug.isNotEmpty) {
-      params['genre'] = genreSlug;
+    if (genreId != null) {
+      params['genre_id'] = '$genreId';
     }
     final queryString = params.entries
         .map((entry) => '${entry.key}=${entry.value}')
@@ -30,6 +30,20 @@ class SeriesRepositoryImpl implements SeriesRepository {
         .whereType<Map<String, dynamic>>()
         .map(Series.fromJson)
         .toList();
+    // Fallback lokal: bila backend belum mendukung filter genre_id dan
+    // mengembalikan semua series, saring dari array genres series —
+    // TAPI hanya bila respons memang membawa data genre (minimal satu
+    // series punya genres). Bila tidak ada data genre sama sekali
+    // (backend belum menyerilaisasi genres), jangan mengosongkan daftar:
+    // percayakan hasil API apa adanya daripada menampilkan list kosong
+    // yang menyesatkan.
+    if (genreId != null && list.any((s) => s.genres.isNotEmpty)) {
+      list = list
+          .where(
+            (series) => series.genres.any((genre) => genre.id == genreId),
+          )
+          .toList();
+    }
     if (query != null && query.trim().isNotEmpty) {
       final needle = query.trim().toLowerCase();
       list = list

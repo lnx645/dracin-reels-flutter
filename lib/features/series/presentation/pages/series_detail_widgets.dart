@@ -143,6 +143,7 @@ class EpisodeRow extends StatelessWidget {
     required this.unlocked,
     required this.durationLabel,
     required this.onTap,
+    this.coverUrl = '',
     super.key,
   });
 
@@ -151,13 +152,22 @@ class EpisodeRow extends StatelessWidget {
   final String durationLabel;
   final VoidCallback onTap;
 
+  /// Cover series pemilik episode — dipakai sebagai thumbnail bila
+  /// thumbnail episode null/kosong (aturan fallback yang dikunci).
+  final String coverUrl;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Thumbnail episode dari API (URL relatif di-resolve lewat basis
-    // media proxy). Null/kosong/gagal → kotak gradasi rapi bernomor,
-    // bukan kotak kosong atau rusak.
-    final thumbUrl = resolveMediaUrl(episode.thumbnailUrl ?? '');
+    // Aturan fallback thumbnail (dikunci): (1) thumbnail episode bila
+    // ada (relatif media/... atau http, di-resolve lewat basis media);
+    // (2) bila null/kosong → cover series; (3) bila keduanya tidak ada
+    // atau gagal dimuat → placeholder gradasi rapi bertitel (angka
+    // episode), bukan kotak kosong/rusak.
+    final thumbnailSource = episode.thumbnailUrl.trim().isNotEmpty
+        ? episode.thumbnailUrl
+        : coverUrl;
+    final thumbUrl = resolveMediaUrl(thumbnailSource);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(

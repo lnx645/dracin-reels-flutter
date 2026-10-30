@@ -6,6 +6,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../series/domain/entities/series.dart';
+import '../../../series/domain/repositories/series_repository.dart';
 import '../../domain/entities/admin_content.dart';
 import '../../domain/repositories/admin_repository.dart';
 import '../widgets/upload_progress_dialog.dart';
@@ -27,8 +29,16 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _coverController;
   late final TextEditingController _freeController;
+  late final TextEditingController _taglineController;
+  late final Future<List<Genre>> _genresFuture;
   String _status = 'draft';
   PlatformFile? _coverFile;
+  bool _saving = false;
+  String? _error;
+
+  /// Genre terpilih (multi-pilih). Diisi dari genre series lama saat
+  /// edit; kosong bila backend belum mengembalikan genre.
+  final Set<int> _selectedGenreIds = <int>{};
   bool _saving = false;
   String? _error;
 
@@ -55,10 +65,28 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
     _freeController = TextEditingController(
       text: free is int ? '$free' : '2',
     );
+    final tagline = existing?['tagline'];
+    _taglineController = TextEditingController(
+      text: tagline is String ? tagline : '',
+    );
+    // Genre lama (edit) dari array genres data lama — bila tidak ada,
+    // tetap kosong (bukan chip palsu).
+    final genresJson = existing?['genres'];
+    if (genresJson is List) {
+      for (final item in genresJson.whereType<Map<String, dynamic>>()) {
+        final id = item['id'];
+        if (id is int) {
+          _selectedGenreIds.add(id);
+        }
+      }
+    }
     final status = existing?['status'];
     if (status is String && (status == 'published' || status == 'draft')) {
       _status = status;
     }
+    // Genre dimuat sekali dari GET /genres; gagal = daftar kosong +
+    // catatan jujur di UI (form tetap jalan, simpan tanpa genre).
+    _genresFuture = context.read<SeriesRepository>().getGenres();
   }
 
   @override
@@ -67,6 +95,7 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
     _descriptionController.dispose();
     _coverController.dispose();
     _freeController.dispose();
+    _taglineController.dispose();
     super.dispose();
   }
 
@@ -120,9 +149,10 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
         title: title,
         description: _descriptionController.text.trim(),
         coverUrl: _coverController.text.trim(),
-        genreIds: const <int>[],
+        genreIds: _selectedGenreIds.toList(),
         freeEpisodeCount: free,
         status: _status,
+        tagline: _taglineController.text.trim(),
       );
       int seriesId;
       final existing = widget.existing;
@@ -192,6 +222,14 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: _taglineController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                hintText: 'Tagline (opsional, 1–2 baris)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: _coverController,
               decoration: const InputDecoration(
                 hintText: 'URL cover (opsional, bila tanpa upload)',
@@ -224,6 +262,45 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
               decoration: const InputDecoration(
                 hintText: 'Jumlah episode gratis',
               ),
+            ),
+            const SizedBox(height: 12),
+            Text('Genre', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            FutureBuilder<List<Genre>>(
+              future: _genresFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const LinearProgressIndicator();
+                }
+                final genres = snapshot.data ?? const <Genre>[];
+                if (genres.isEmpty) {
+                  return const Text(
+                    'Belum ada genre dari server.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  );
+                }
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: genres.map((genre) {
+                    final selected =
+                        _selectedGenreIds.contains(genre.id);
+                    return FilterChip(
+                      label: Text(genre.name),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          if (value) {
+                            _selectedGenreIds.add(genre.id);
+                          } else {
+                            _selectedGenreIds.remove(genre.id);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                );
+              },
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(

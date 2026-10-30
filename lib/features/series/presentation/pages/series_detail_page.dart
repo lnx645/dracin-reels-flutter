@@ -235,21 +235,36 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                     SeriesCoverHeader(series: series),
                     const SizedBox(height: 16),
                     Text(series.title, style: theme.textTheme.titleLarge),
+                    // Tagline (kontrak baru): di bawah judul, gaya kutipan
+                    // italic. Kosong → baris disembunyikan, bukan teks
+                    // contoh.
+                    if (series.tagline.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        '"${series.tagline.trim()}"',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     Text(
                       series.description,
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: series.genres
-                          .map(
-                            (genre) => Chip(label: Text(genre.name)),
-                          )
-                          .toList(),
-                    ),
+                    if (series.genres.isNotEmpty)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: series.genres
+                            .map(
+                              (genre) => Chip(label: Text(genre.name)),
+                            )
+                            .toList(),
+                      ),
                     const SizedBox(height: 8),
                     BlocBuilder<WalletBloc, WalletState>(
                       builder: (context, wallet) {
@@ -280,14 +295,15 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                         episode: episode,
                         unlocked: unlocked,
                         durationLabel: _duration(episode.durationSeconds),
+                        coverUrl: series.coverUrl,
                         onTap: () => _onEpisodeTap(context, episode),
                       );
                     }),
                     const SizedBox(height: 16),
                     Text(
-                      'Video belum memutar (UI saja). Area video pada '
-                      'feed masih placeholder sampai pemutar beneran '
-                      'dipasang.',
+                      'Video diputar dari tautan episode (file video '
+                      'langsung atau HLS). Tautan halaman web tidak dapat '
+                      'diputar di sini.',
                       style: theme.textTheme.bodySmall,
                     ),
                   ],
