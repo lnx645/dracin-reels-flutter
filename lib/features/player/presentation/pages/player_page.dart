@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
 import '../../../../core/session/session_cubit.dart';
@@ -50,9 +51,33 @@ class _PlayerPageState extends State<PlayerPage> {
   late int _seriesId;
   bool _isPlaying = false;
 
-  /// Status putar yang diminta untuk area video (tombol Putar/Jeda di
-  /// bawah ikut status controller yang sebenarnya lewat callback).
+  /// Status putar yang diminta untuk area video (ketuk video memutar /
+  /// menjeda lewat controller; status tombol mengikuti controller).
   final ValueNotifier<bool> _playRequest = ValueNotifier<bool>(false);
+
+  /// Permintaan seek dari Slider progress bawah (diteruskan ke area
+  /// video; tiap nilai baru langsung di-seek).
+  final ValueNotifier<Duration> _seekRequest =
+      ValueNotifier<Duration>(Duration.zero);
+
+  /// Durasi video aktif (dari controller, untuk Slider progress).
+  Duration _videoDuration = Duration.zero;
+
+  /// Episode TERAKHIR series sudah selesai diputar (bukan mengulang
+  /// diam-diam, bukan loading tanpa akhir): overlay status akhir.
+  bool _ended = false;
+
+  /// Info episode berikutnya yang dihitung di build (dipakai auto-next
+  /// + prefetch; diperbarui tiap build, bukan sumber kebenaran sendiri).
+  String? _latestNextId;
+  bool _latestNextLocked = false;
+  SeriesEpisode? _latestNextDetail;
+
+  /// Prefetch episode berikutnya (init + buffer awal saja). Dibatalkan
+  /// (dispose) saat pindah episode / keluar Player bila belum diklaim
+  /// area video; bila sudah diklaim, area yang men-dispose-nya.
+  PrewarmedController? _prewarm;
+  String _prewarmUrl = '';
 
   int? _pendingUnlockId;
   int? _lastUnlockShown;
@@ -62,12 +87,22 @@ class _PlayerPageState extends State<PlayerPage> {
   final Set<String> _recorded = <String>{};
 
   /// DUA STATE PLAYER (klarifikasi uwa):
-  /// - PAUSE = kontrol: chrome lengkap (header, rel kanan, judul,
-  ///   tombol, progress, baris episode).
+  /// - PAUSE = kontrol: chrome lengkap sesuai GEOMETRI REFERENSI
+  ///   (header kiri, video 16:9 full-width di tengah atas, pil
+  ///   "Layar Penuh" di tengah bawah video, rel ikon di kanan bawah
+  ///   video, judul + deskripsi, Slider progress, baris Total).
+  ///   Play/pause HANYA lewat ketuk video (overlay play besar saat
+  ///   pause); pindah episode HANYA lewat Daftar Episode (baris Total
+  ///   / menu "...") — baris tombol Sebelumnya/Putar/Berikutnya
+  ///   DIHAPUS atas perintah uwa.
   /// - PLAY = imersi: chrome menghilang (fade/collapse), tersisa video
   ///   + subtitle + progress tipis. Ketuk video saat play → pause +
   ///   chrome kembali; ketuk saat pause → play + chrome hilang
   ///   otomatis setelah ~3 detik (timer di-reset tiap interaksi).
+  /// - AUTO-NEXT: video selesai → episode berikutnya dalam series
+  ///   yang sama otomatis diputar; episode terkunci berikutnya tetap
+  ///   menampilkan gembok (tidak auto-play); episode TERAKHIR selesai
+  ///   → overlay status akhir (bukan ulang diam-diam).
   bool _chromeVisible = true;
   Timer? _hideTimer;
 
@@ -97,9 +132,87 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     _hideTimer?.cancel();
     _playRequest.dispose();
+    _seekRequest.dispose();
+    // Keluar Player = prefetch dibatalkan (bila belum diklaim area).
+    _disposePrewarm();
     // Pulihkan orientasi bila keluar halaman saat fullscreen aktif.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
+  }
+
+  /// Buang controller prefetch bila belum diklaim area video.
+  void _disposePrewarm() {
+    final prewarm = _prewarm;
+    _prewarm = null;
+    _prewarmUrl = '';
+    if (prewarm != null && !prewarm.claimed) {
+      prewarm.controller.dispose();
+    }
+  }
+
+  /// Mulai prefetch episode berikutnya: init + buffer awal saja
+  /// (ExoPlayer tidak mengunduh file penuh saat init). Hanya sekali
+  /// per URL berikutnya, hanya bila berikutnya ada + tidak terkunci +
+  /// punya URL yang bisa diputar. Dipicu saat episode aktif mulai
+  /// memutar (buffer episode aktif sudah cukup, sisa bandwidth untuk
+  /// berikutnya) — supaya auto-next tidak buffering dari nol.
+  Future<void> _maybePrewarmNext() async {
+    final next = _latestNextDetail;
+    if (next == null || _latestNextLocked) {
+      return;
+    }
+    final raw = next.hlsUrl.isNotEmpty ? next.hlsUrl : next.videoUrl;
+    final resolved = resolveMediaUrl(raw);
+    if (resolved.isEmpty || resolved == _prewarmUrl) {
+      return;
+    }
+    _disposePrewarm();
+    final uri = Uri.tryParse(resolved);
+    if (uri == null) {
+      return;
+    }
+    final controller = VideoPlayerController.networkUrl(uri);
+    final prewarm = PrewarmedController(controller);
+    _prewarm = prewarm;
+    _prewarmUrl = resolved;
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 90));
+    } on Exception {
+      // Prefetch gagal = tidak masalah: auto-next tetap jalan dengan
+      // init biasa. Buang controller gagal bila belum diklaim.
+      if (mounted && _prewarm == prewarm && !prewarm.claimed) {
+        _disposePrewarm();
+      }
+      return;
+    }
+    if (!mounted || _prewarm != prewarm || prewarm.claimed) {
+      return;
+    }
+    // Siap diklaim area video episode berikutnya saat auto-next /
+    // pindah manual lewat Daftar Episode.
+  }
+
+  /// Video selesai: lanjut otomatis ke episode berikutnya (auto-play),
+  /// kecuali berikutnya terkunci (pindah + tampil gembok, tanpa
+  /// auto-play) atau ini episode terakhir (overlay status akhir).
+  void _onVideoEnded() {
+    if (!mounted) {
+      return;
+    }
+    final nextId = _latestNextId;
+    if (nextId != null) {
+      _switchTo(nextId, autoPlay: !_latestNextLocked);
+    } else if (!_ended) {
+      setState(() => _ended = true);
+    }
+  }
+
+  /// Putar ulang manual dari overlay akhir (satu-satunya pengulangan:
+  /// atas ketukan pengguna, bukan otomatis).
+  void _replayEnded() {
+    setState(() => _ended = false);
+    _seekRequest.value = Duration.zero;
+    _playRequest.value = true;
   }
 
   /// Status putar dari controller video (bukan lagi bool UI semata):
@@ -113,6 +226,8 @@ class _PlayerPageState extends State<PlayerPage> {
     setState(() => _isPlaying = playing);
     if (playing) {
       _resetHideTimer();
+      // Episode aktif jalan → mulai prefetch berikutnya.
+      _maybePrewarmNext();
     } else {
       _hideTimer?.cancel();
       if (!_chromeVisible) {
@@ -176,6 +291,12 @@ class _PlayerPageState extends State<PlayerPage> {
   void _onVideoPosition(Duration position) {
     if (mounted) {
       setState(() => _videoPosition = position);
+    }
+  }
+
+  void _onVideoDuration(Duration duration) {
+    if (mounted) {
+      setState(() => _videoDuration = duration);
     }
   }
 
@@ -277,20 +398,27 @@ class _PlayerPageState extends State<PlayerPage> {
         );
   }
 
-  void _switchTo(String episodeId) {
+  void _switchTo(String episodeId, {bool autoPlay = false}) {
     _hideTimer?.cancel();
+    // Prefetch TIDAK dibuang di sini: bila pindah ke episode yang
+    // memang di-prefetch (auto-next), area barulah yang mengklaimnya.
+    // Prefetch basi dibersihkan di build (URL tidak cocok dengan
+    // episode aktif/berikutnya yang baru).
     setState(() {
       _currentId = episodeId;
       _seriesId = _parseSeriesId(episodeId) ?? _seriesId;
       _isPlaying = false;
       // Episode baru = state PAUSE (chrome kembali) + posisi +
-      // deskripsi di-reset.
+      // deskripsi + status akhir di-reset.
       _chromeVisible = true;
       _videoPosition = Duration.zero;
+      _videoDuration = Duration.zero;
       _descriptionExpanded = false;
+      _ended = false;
     });
-    // Controller baru tidak boleh auto-memutar episode pengganti.
-    _playRequest.value = false;
+    // Pindah MANUAL tidak auto-memutar (pengguna mengetuk Daftar
+    // Episode → ia yang mengetuk play). AUTO-NEXT memutar langsung.
+    _playRequest.value = autoPlay;
   }
 
   Future<void> _toggleLike(Episode episode) async {
@@ -565,6 +693,8 @@ class _PlayerPageState extends State<PlayerPage> {
     List<SeriesEpisode> seriesEpisodes,
     int seriesId,
   ) {
+    // Geometri referensi: "Ep. N" di KIRI tepat setelah tombol
+    // kembali (bukan tengah), "..." di kanan.
     return Row(
       children: <Widget>[
         IconButton(
@@ -572,13 +702,11 @@ class _PlayerPageState extends State<PlayerPage> {
           onPressed: () => Navigator.of(context).maybePop(),
           icon: const Icon(Icons.arrow_back),
         ),
-        Expanded(
-          child: Text(
-            'Ep. ${episode.number}',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+        Text(
+          'Ep. ${episode.number}',
+          style: Theme.of(context).textTheme.titleMedium,
         ),
+        const Spacer(),
         PopupMenuButton<String>(
           tooltip: 'Opsi',
           icon: const Icon(Icons.more_vert),
@@ -607,12 +735,10 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   Widget _videoArea(
-    bool locked,
     SeriesEpisode? lockedDetail,
     SeriesEpisode? detail,
     bool detailLoading,
     String coverUrl,
-    Episode episode,
   ) {
     // ATURAN KEJUJURAN STATE (cacat kelas terburuk: ikon "memutar" tanpa
     // video jalan): area video TIDAK PERNAH menampilkan gradasi statis
@@ -638,12 +764,32 @@ class _PlayerPageState extends State<PlayerPage> {
       video = VideoPlayerArea(
         key: ValueKey<String>('video-${detail.id}'),
         videoUrl: detail.videoUrl,
+        // HLS diutamakan bila backend menyediakannya (ABR ExoPlayer);
+        // MP4 progresif hanya fallback.
+        hlsUrl: detail.hlsUrl,
         playRequest: _playRequest,
         onPlayingChanged: _onPlayingChanged,
         posterUrl: coverUrl,
-        // State PLAY fokus: kontrol penuh → progress tipis.
-        showControls: _chromeVisible,
+        // Portrait (PAUSE maupun PLAY fokus) = video bersih: kontrol
+        // penuh HANYA di fullscreen (seek + posisi/durasi di sana).
+        // PAUSE: progress + seek lewat Slider bawah (pola referensi);
+        // PLAY fokus: progress tipis di tepi bawah video.
+        showControls: _fullscreen,
         onPositionChanged: _onVideoPosition,
+        onDurationChanged: _onVideoDuration,
+        onVideoEnded: _onVideoEnded,
+        seekRequest: _seekRequest,
+        // Prefetch HANYA bila URL-nya memang episode ini (bila tidak
+        // cocok, area init biasa — controller orang lain tidak pernah
+        // dipakai untuk episode yang salah).
+        prewarmed: _prewarmUrl ==
+                resolveMediaUrl(
+                  detail.hlsUrl.isNotEmpty
+                      ? detail.hlsUrl
+                      : detail.videoUrl,
+                )
+            ? _prewarm
+            : null,
       );
     } else if (detailLoading) {
       video = Stack(
@@ -668,10 +814,9 @@ class _PlayerPageState extends State<PlayerPage> {
         onPlayingChanged: _onPlayingChanged,
       );
     }
-    // Rel kanan hanya saat video (tidak terkunci); di state PLAY fokus
-    // dan di fullscreen ia menghilang bersama chrome.
-    final railVisible =
-        lockedDetail == null && _chromeVisible && !_fullscreen;
+    // Rel TIDAK lagi di dalam area video: geometri referensi
+    // meletakkannya DI BAWAH video (sejajar kolom bawah, kanan) —
+    // dibangun terpisah di layout PAUSE (_actionRail).
     final currentCue = detail != null && lockedDetail == null
         ? cueAt(_subtitleCues, _videoPosition)
         : null;
@@ -680,69 +825,6 @@ class _PlayerPageState extends State<PlayerPage> {
         Positioned.fill(child: video),
         if (lockedDetail != null)
           Positioned.fill(child: _lockOverlay(lockedDetail)),
-        // Rel kanan: Suka / Komentar / Bagikan / Simpan — ikon TANPA
-        // angka (API tidak menyediakan hitungan; angka referensi
-        // 18,4K/192/24,6K TIDAK PERNAH ditiru).
-        Positioned(
-          right: 8,
-          top: 0,
-          bottom: 0,
-          child: IgnorePointer(
-            ignoring: !railVisible,
-            child: AnimatedOpacity(
-              opacity: railVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 300),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    _PlayerAction(
-                      icon: episode.isLiked
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      label: 'Suka',
-                      active: episode.isLiked,
-                      onPressed: () {
-                        _resetHideTimer();
-                        _toggleLike(episode);
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _PlayerAction(
-                      icon: Icons.chat_bubble_outline,
-                      label: 'Komentar',
-                      onPressed: () {
-                        _resetHideTimer();
-                        _showComments(episode);
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _PlayerAction(
-                      icon: Icons.share,
-                      label: 'Bagikan',
-                      onPressed: () {
-                        _resetHideTimer();
-                        _showShareSheet();
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _PlayerAction(
-                      icon: episode.isBookmarked
-                          ? Icons.bookmark
-                          : Icons.bookmark_border,
-                      label: 'Simpan',
-                      active: episode.isBookmarked,
-                      onPressed: () {
-                        _resetHideTimer();
-                        _toggleBookmark(episode);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
         // Overlay subtitle: hanya bila ada cue pada posisi putar saat
         // ini. Gaya keterbacaan (arahan senior UI/UX): teks cukup besar
         // (17, Semibold), putih kontras tinggi, bayangan gelap +
@@ -751,8 +833,10 @@ class _PlayerPageState extends State<PlayerPage> {
         if (currentCue != null)
           Positioned(
             left: 16,
-            right: railVisible ? 72 : 16,
-            bottom: _chromeVisible ? 64 : 20,
+            right: 16,
+            // Portrait = video bersih (tanpa bar kontrol) → subtitle
+            // dekat tepi bawah video; fullscreen = di atas bar kontrol.
+            bottom: _fullscreen ? 64 : 16,
             child: Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -812,10 +896,92 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
+  /// Rel aksi pola referensi — IKON SAJA, tanpa label kata dan
+  /// tanpa angka (API tidak menyediakan hitungan; angka referensi
+  /// 18,4K/192/24,6K/357 TIDAK PERNAH ditiru). Urutan = referensi:
+  /// Suka, Komentar, Simpan, Bagikan.
+  Widget _actionRail(Episode episode) {
+    final gap = MediaQuery.of(context).size.height * 0.045;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _PlayerAction(
+          icon: episode.isLiked ? Icons.favorite : Icons.favorite_border,
+          tooltip: 'Suka',
+          active: episode.isLiked,
+          onPressed: () {
+            _resetHideTimer();
+            _toggleLike(episode);
+          },
+        ),
+        SizedBox(height: gap),
+        _PlayerAction(
+          icon: Icons.chat_bubble_outline,
+          tooltip: 'Komentar',
+          onPressed: () {
+            _resetHideTimer();
+            _showComments(episode);
+          },
+        ),
+        SizedBox(height: gap),
+        _PlayerAction(
+          icon:
+              episode.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+          tooltip: 'Simpan',
+          active: episode.isBookmarked,
+          onPressed: () {
+            _resetHideTimer();
+            _toggleBookmark(episode);
+          },
+        ),
+        SizedBox(height: gap),
+        _PlayerAction(
+          icon: Icons.share,
+          tooltip: 'Bagikan',
+          onPressed: () {
+            _resetHideTimer();
+            _showShareSheet();
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Pil "Layar Penuh" pola referensi: di TENGAH bawah video (bukan
+  /// teks oranye kanan atas), pil gelap + ikon + label.
+  Widget _fullscreenPill() {
+    return Center(
+      child: InkWell(
+        onTap: _toggleFullscreen,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF26262B),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.fullscreen, size: 20, color: Colors.white),
+              SizedBox(width: 8),
+              Text('Layar Penuh', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Kolom bawah state PAUSE (pola referensi): pil layar penuh,
+  /// judul, deskripsi 1 baris + chevron expand, baris seek tipis
+  /// NYATA (posisi/durasi controller), baris Total. Baris tombol
+  /// Sebelumnya/Putar/
+  /// Berikutnya DIHAPUS (perintah uwa: play/pause hanya ketuk video,
+  /// pindah episode hanya lewat Daftar Episode). Catatan penjelasan
+  /// permanen DIHAPUS — hanya tampil di error state area video.
   Widget _infoSection(
     Episode episode,
-    String? previousId,
-    String? nextId,
     bool locked,
     List<SeriesEpisode> seriesEpisodes,
     int seriesId,
@@ -841,181 +1007,109 @@ class _PlayerPageState extends State<PlayerPage> {
     final freeText = total > 0 && freeEpisodeCount >= total
         ? 'Gratis Semua'
         : '$freeEpisodeCount Ep gratis';
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    final durationMs = _videoDuration.inMilliseconds;
+    final positionMs =
+        _videoPosition.inMilliseconds.clamp(0, durationMs);
+    final content = <Widget>[
+      InkWell(
+        onTap: _openSeriesDetail,
+        child: Text(
+          titleLine,
+          style: Theme.of(context).textTheme.titleMedium,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              description,
+              style: Theme.of(context).textTheme.bodyMedium,
+              maxLines: _descriptionExpanded ? null : 1,
+              overflow: _descriptionExpanded
+                  ? TextOverflow.visible
+                  : TextOverflow.ellipsis,
+            ),
+          ),
+          if (showExpand)
+            InkWell(
+              onTap: () {
+                _resetHideTimer();
+                setState(
+                  () => _descriptionExpanded = !_descriptionExpanded,
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(
+                  _descriptionExpanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  size: 20,
+                ),
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      // Progress NYATA dari controller (seekable): baris tipis
+      // selebar layar seperti baris progress referensi (Slider
+      // material setinggi 48px akan merusak geometri referensi, jadi
+      // dipakai baris seek tipis buatan sendiri: ketuk/geser = seek).
+      _SeekBar(
+        fraction: durationMs == 0
+            ? 0
+            : (positionMs / durationMs).clamp(0.0, 1.0).toDouble(),
+        enabled: canPlay && durationMs > 0,
+        onSeek: (fraction) => _seekRequest.value = Duration(
+          milliseconds: (fraction * durationMs).round(),
+        ),
+      ),
+      // Baris bawah pola referensi: "Total N Ep · [status gratis] >"
+      // (ketuk → bottom sheet Daftar Episode). Hanya bila daftar
+      // episode series sudah dimuat (angka dari API, bukan karangan).
+      if (seriesEpisodes.isNotEmpty)
+        InkWell(
+          onTap: () => _showEpisodeList(seriesEpisodes, seriesId),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.list, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Total $total Ep · $freeText >',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 20),
+              ],
+            ),
+          ),
+        ),
+    ];
+    // Deskripsi diperluas bisa meluber dari area bawah yang tetap:
+    // saat itu kolom bawah boleh di-scroll (hanya saat diperluas).
+    if (_descriptionExpanded) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 76, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: content,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 76, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          InkWell(
-            onTap: _openSeriesDetail,
-            child: Text(
-              titleLine,
-              style: Theme.of(context).textTheme.titleMedium,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: Theme.of(context).textTheme.bodyMedium,
-            maxLines: _descriptionExpanded ? null : 2,
-            overflow: _descriptionExpanded
-                ? TextOverflow.visible
-                : TextOverflow.ellipsis,
-          ),
-          if (showExpand)
-            TextButton(
-              onPressed: () => setState(
-                () => _descriptionExpanded = !_descriptionExpanded,
-              ),
-              child: Text(
-                _descriptionExpanded ? 'Sembunyikan' : 'Selengkapnya',
-              ),
-            ),
-          const SizedBox(height: 16),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Tooltip(
-                  message: 'Sebelumnya',
-                  child: OutlinedButton(
-                    style: const ButtonStyle(
-                      padding: WidgetStatePropertyAll<EdgeInsets>(
-                        EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                    ),
-                    onPressed: previousId == null
-                        ? null
-                        : () => _switchTo(previousId),
-                    // Ikon + label satu baris (FittedBox mengecilkan
-                    // label, bukan wrap tengah kata). Ikon tidak pernah
-                    // mengecil — label yang menyesuaikan.
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        const Icon(Icons.skip_previous, size: 20),
-                        const SizedBox(width: 4),
-                        const Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              'Sebelumnya',
-                              maxLines: 1,
-                              softWrap: false,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Tooltip(
-                  message: locked
-                      ? 'Terkunci'
-                      : (_isPlaying ? 'Jeda' : 'Putar'),
-                  child: ElevatedButton(
-                    style: const ButtonStyle(
-                      padding: WidgetStatePropertyAll<EdgeInsets>(
-                        EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                    ),
-                    onPressed: !canPlay
-                        ? null
-                        : () => _playRequest.value = !_isPlaying,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        Icon(
-                          locked
-                              ? Icons.lock
-                              : (_isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow),
-                          size: 22,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              locked
-                                  ? 'Terkunci'
-                                  : (_isPlaying ? 'Jeda' : 'Putar'),
-                              maxLines: 1,
-                              softWrap: false,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Tooltip(
-                  message: 'Berikutnya',
-                  child: OutlinedButton(
-                    style: const ButtonStyle(
-                      padding: WidgetStatePropertyAll<EdgeInsets>(
-                        EdgeInsets.symmetric(horizontal: 8),
-                      ),
-                    ),
-                    onPressed:
-                        nextId == null ? null : () => _switchTo(nextId),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        const Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              'Berikutnya',
-                              maxLines: 1,
-                              softWrap: false,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.skip_next, size: 20),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Baris bawah pola referensi: "Total N Ep · [status gratis] >"
-          // (ketuk → bottom sheet Daftar Episode). Hanya bila daftar
-          // episode series sudah dimuat (angka dari API, bukan karangan).
-          if (seriesEpisodes.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 16),
-            InkWell(
-              onTap: () => _showEpisodeList(seriesEpisodes, seriesId),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      'Total $total Ep · $freeText >',
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, size: 20),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Text(
-            'Video diputar dari tautan episode (file video langsung '
-            'atau HLS). Tautan halaman web tidak dapat diputar di sini.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          const Spacer(),
+          ...content,
         ],
       ),
     );
@@ -1143,24 +1237,50 @@ class _PlayerPageState extends State<PlayerPage> {
                     detail.locked &&
                     !wallet.vip.isActive;
                 final lockedDetail = locked ? detail : null;
-                // Navigasi Sebelumnya/Berikutnya HANYA di dalam series
-                // aktif (bukan feed global).
+                // Episode berikutnya di dalam series aktif (untuk
+                // auto-next + prefetch; bukan feed global).
                 final currentDetailId = currentDetail?.id;
                 final currentIndex = currentDetailId == null
                     ? -1
                     : seriesEpisodes.indexWhere(
                         (item) => item.id == currentDetailId,
                       );
-                final String? previousId = currentIndex > 0
-                    ? 's$_seriesId'
-                        'e${seriesEpisodes[currentIndex - 1].id}'
-                    : null;
-                final String? nextId =
-                    currentIndex >= 0 &&
-                            currentIndex < seriesEpisodes.length - 1
-                        ? 's$_seriesId'
-                            'e${seriesEpisodes[currentIndex + 1].id}'
-                        : null;
+                final hasNext = currentIndex >= 0 &&
+                    currentIndex < seriesEpisodes.length - 1;
+                final SeriesEpisode? nextDetail =
+                    hasNext ? seriesEpisodes[currentIndex + 1] : null;
+                final String? nextId = nextDetail == null
+                    ? null
+                    : 's$_seriesId' 'e${nextDetail.id}';
+                final nextLocked = nextDetail != null &&
+                    nextDetail.locked &&
+                    !wallet.vip.isActive;
+                _latestNextId = nextId;
+                _latestNextLocked = nextLocked;
+                _latestNextDetail = nextDetail;
+                // Prefetch basi dibersihkan: hanya dipertahankan bila
+                // URL-nya = episode aktif atau episode berikutnya
+                // yang baru (bila sudah diklaim area, area pemiliknya).
+                if (_prewarm != null && !_prewarm!.claimed) {
+                  final currentUrl = detail == null
+                      ? ''
+                      : resolveMediaUrl(
+                          detail.hlsUrl.isNotEmpty
+                              ? detail.hlsUrl
+                              : detail.videoUrl,
+                        );
+                  final nextUrl = nextDetail == null
+                      ? ''
+                      : resolveMediaUrl(
+                          nextDetail.hlsUrl.isNotEmpty
+                              ? nextDetail.hlsUrl
+                              : nextDetail.videoUrl,
+                        );
+                  if (_prewarmUrl != currentUrl &&
+                      _prewarmUrl != nextUrl) {
+                    _disposePrewarm();
+                  }
+                }
                 // Tercatat ke riwayat saat episode terbuka untuk ditonton
                 // (bukan saat masih terkunci di balik gembok) dan hanya
                 // bila detail series dari API tersedia (judul series
@@ -1188,62 +1308,135 @@ class _PlayerPageState extends State<PlayerPage> {
                   });
                 }
                 final chromeVisible = _chromeVisible && !_fullscreen;
+                final videoWidget = _videoArea(
+                  lockedDetail,
+                  detail,
+                  detailState.detail == null &&
+                      detailState.errorMessage == null,
+                  detailState.detail?.series.coverUrl ?? '',
+                );
+                // Overlay status akhir series (episode terakhir
+                // selesai): bukan ulang diam-diam, bukan loading.
+                final videoWithEnd = Stack(
+                  children: <Widget>[
+                    videoWidget,
+                    if (_ended)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black87,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.check_circle_outline,
+                                    size: 56,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Episode terakhir sudah selesai '
+                                    'diputar.',
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: () => _showEpisodeList(
+                                      seriesEpisodes,
+                                      _seriesId,
+                                    ),
+                                    child: const Text('Daftar Episode'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: _replayEnded,
+                                    child: const Text('Putar Ulang'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+                // PLAY fokus / fullscreen = video saja (perilaku lama
+                // yang dikunci: chrome hilang, fokus video).
+                if (!chromeVisible) {
+                  return Scaffold(
+                    body: SafeArea(
+                      child: Column(
+                        children: <Widget>[
+                          Expanded(child: videoWithEnd),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                // PAUSE = GEOMETRI REFERENSI (persen tinggi layar,
+                // diukur dari tangkapan 614x1280):
+                // - header tengah ~11%: spacer 5% + baris header.
+                // - video 16:9 full-width, atas ~33,4%, tinggi ~27%.
+                // - pil Layar Penuh tengah, atas ~62,5% (gap 2%).
+                // - rel ikon kanan bawah video (jantung ~61%).
+                // - judul ~81,7%, deskripsi ~89,3%, progress ~93%,
+                //   baris Total ~94,1%.
+                final screenHeight = MediaQuery.of(context).size.height;
                 return Scaffold(
                   body: SafeArea(
                     child: Column(
                       children: <Widget>[
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 300),
-                          child: chromeVisible
-                              ? Column(
-                                  children: <Widget>[
-                                    _headerRow(
-                                      episode,
-                                      seriesEpisodes,
-                                      _seriesId,
-                                    ),
-                                    // Tombol "Layar Penuh" di atas video.
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton.icon(
-                                        onPressed: _toggleFullscreen,
-                                        icon: const Icon(Icons.fullscreen),
-                                        label:
-                                            const Text('Layar Penuh'),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
+                        SizedBox(height: screenHeight * 0.05),
+                        _headerRow(
+                          episode,
+                          seriesEpisodes,
+                          _seriesId,
+                        ),
+                        SizedBox(height: screenHeight * 0.197),
+                        AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: videoWithEnd,
                         ),
                         Expanded(
-                          flex: 5,
-                          child: _videoArea(
-                            locked,
-                            lockedDetail,
-                            detail,
-                            detailState.detail == null &&
-                                detailState.errorMessage == null,
-                            detailState.detail?.series.coverUrl ?? '',
-                            episode,
+                          child: Stack(
+                            children: <Widget>[
+                              Column(
+                                children: <Widget>[
+                                  SizedBox(
+                                    height: screenHeight * 0.02,
+                                  ),
+                                  _fullscreenPill(),
+                                  Expanded(
+                                    child: _infoSection(
+                                      episode,
+                                      locked,
+                                      seriesEpisodes,
+                                      _seriesId,
+                                      detail,
+                                      seriesTitle,
+                                      detailState.detail?.series
+                                              .freeEpisodeCount ??
+                                          0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              // Rel di kanan bawah video (di luar area
+                              // video, sejajar kolom bawah).
+                              if (lockedDetail == null)
+                                Positioned(
+                                  right: 20,
+                                  top: screenHeight * 0.005,
+                                  child: _actionRail(episode),
+                                ),
+                            ],
                           ),
                         ),
-                        if (chromeVisible)
-                          Expanded(
-                            flex: 4,
-                            child: _infoSection(
-                              episode,
-                              previousId,
-                              nextId,
-                              locked,
-                              seriesEpisodes,
-                              _seriesId,
-                              detail,
-                              seriesTitle,
-                              detailState.detail?.series.freeEpisodeCount ??
-                                  0,
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -1257,33 +1450,120 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 }
 
+/// Baris seek tipis pola referensi (bukan Slider material 48px):
+/// trek 4px + isi + thumb 12px; ketuk/geser di mana saja = seek.
+/// Fraksi & status dari controller (nyata, bukan animasi).
+class _SeekBar extends StatelessWidget {
+  const _SeekBar({
+    required this.fraction,
+    required this.enabled,
+    required this.onSeek,
+  });
+
+  final double fraction;
+  final bool enabled;
+  final ValueChanged<double> onSeek;
+
+  double _fractionFrom(Offset local, double width) {
+    if (width <= 12) {
+      return 0;
+    }
+    return ((local.dx - 6) / (width - 12)).clamp(0.0, 1.0).toDouble();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final travel = width - 12;
+        final thumbLeft = 6 + fraction * travel - 6;
+        final color = enabled ? Colors.white : Colors.white38;
+        return GestureDetector(
+          onTapDown: enabled
+              ? (details) =>
+                  onSeek(_fractionFrom(details.localPosition, width))
+              : null,
+          onHorizontalDragUpdate: enabled
+              ? (details) =>
+                  onSeek(_fractionFrom(details.localPosition, width))
+              : null,
+          child: Container(
+            height: 28,
+            color: Colors.transparent,
+            child: Stack(
+              children: <Widget>[
+                Center(
+                  child: Container(
+                    height: 4,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Center(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 4,
+                      width: 6 + fraction * travel,
+                      margin: const EdgeInsets.only(left: 6),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: thumbLeft,
+                  top: 8,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Satu aksi rel: IKON SAJA (pola referensi) — tanpa label kata,
+/// tanpa angka. Tooltip menjaga aksesibilitas.
 class _PlayerAction extends StatelessWidget {
   const _PlayerAction({
     required this.icon,
-    required this.label,
+    required this.tooltip,
     required this.onPressed,
     this.active = false,
   });
 
   final IconData icon;
-  final String label;
+  final String tooltip;
   final VoidCallback onPressed;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            icon,
-            color: active ? AppColors.accent : Colors.white,
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
-        ],
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 28,
+          color: active ? AppColors.accent : Colors.white,
+        ),
       ),
     );
   }

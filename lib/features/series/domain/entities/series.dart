@@ -81,6 +81,7 @@ class SeriesEpisode {
     required this.title,
     required this.description,
     required this.videoUrl,
+    this.hlsUrl = '',
     required this.subtitleUrl,
     required this.durationSeconds,
     required this.coinPrice,
@@ -95,6 +96,13 @@ class SeriesEpisode {
   final String title;
   final String description;
   final String videoUrl;
+
+  /// `hls_url` episode dari API ('' bila backend belum menyediakannya).
+  /// Bila ada, pemutar MEMAKAI ini dulu (ExoPlayer ABR HLS naik-turun
+  /// otomatis mengikuti kecepatan internet — jawaban utama untuk
+  /// internet jelek); MP4 progresif hanya fallback.
+  final String hlsUrl;
+
   final String? subtitleUrl;
   final int durationSeconds;
   final int coinPrice;
@@ -116,6 +124,7 @@ class SeriesEpisode {
           : '',
       videoUrl:
           json['video_url'] is String ? json['video_url'] as String : '',
+      hlsUrl: json['hls_url'] is String ? json['hls_url'] as String : '',
       subtitleUrl: subtitle is String ? subtitle : null,
       durationSeconds: json['duration_seconds'] is int
           ? json['duration_seconds'] as int
@@ -138,6 +147,7 @@ class SeriesEpisode {
       title: title,
       description: description,
       videoUrl: videoUrl,
+      hlsUrl: hlsUrl,
       subtitleUrl: subtitleUrl,
       durationSeconds: durationSeconds,
       coinPrice: coinPrice,

@@ -1,7 +1,7 @@
 name: dracin_reels
 description: "Dracin Reels - aplikasi reels video pendek."
 publish_to: "none"
-version: 0.2.7+9
+version: 0.2.8+10
 
 environment:
   sdk: ^3.5.0

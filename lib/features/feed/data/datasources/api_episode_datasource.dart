@@ -62,6 +62,9 @@ class ApiEpisodeDataSource {
             videoUrl: raw['video_url'] is String
                 ? raw['video_url'] as String
                 : '',
+            hlsUrl: raw['hls_url'] is String
+                ? raw['hls_url'] as String
+                : '',
             locked: raw['locked'] is bool ? raw['locked'] as bool : false,
             coinPrice: raw['coin_price'] is int
                 ? raw['coin_price'] as int

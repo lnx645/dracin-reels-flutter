@@ -1,9 +1,29 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
+
+/// Controller yang sudah di-init di latar untuk episode BERIKUTNYA
+/// (prefetch auto-next). Pemiliknya (PlayerPage) membuat +
+/// meng-init-nya; begitu area video episode itu dipasang, area
+/// mengklaimnya (`claimed = true`) dan mengambil alih dispose.
+/// Pemilik HANYA boleh dispose bila belum diklaim — jadi tidak pernah
+/// ada dispose ganda. Prefetch hanya init + buffer awal ExoPlayer
+/// (bukan unduh file penuh): cukup supaya auto-next tidak mulai
+/// buffering dari nol di internet lambat.
+class PrewarmedController {
+  PrewarmedController(this.controller);
+
+  final VideoPlayerController controller;
+
+  bool claimed = false;
+
+  bool get ready =>
+      controller.value.isInitialized && !controller.value.hasError;
+}
 
 /// Format durasi `m:ss` (atau `h:mm:ss` bila ≥ 1 jam) untuk label posisi.
 String _formatDuration(Duration duration) {
@@ -21,6 +41,20 @@ String _formatDuration(Duration duration) {
 /// init → loading, siap → video + kontrol, gagal → error asli + retry.
 /// Ganti episode = widget baru (key per episode dari pemanggil) atau
 /// `videoUrl` berubah → controller lama di-dispose, init ulang.
+///
+/// Pemutar pintar (internet jelek):
+/// - HLS diutamakan bila [hlsUrl] ada (ABR ExoPlayer otomatis); MP4
+///   progresif hanya fallback.
+/// - Buffering DITUNJUKKAN nyata (persen buffer dari controller),
+///   bukan spinner diam; init dibatasi timeout 90 detik.
+/// - Jaringan putus DI TENGAH putar (controller pernah init sukses)
+///   → coba lagi otomatis dengan backoff 2/4/8/16/16 detik (maks 5x)
+///   dan lanjut dari posisi terakhir; gagal init dari awal → error
+///   asli + Coba Lagi manual (tautan jelek tidak di-retry buta).
+/// - Batas jujur: video_player TIDAK mengekspos cache ExoPlayer, jadi
+///   cache segmen tidak bisa diaktifkan dari sini (butuh platform
+///   code/fork di luar paket ini); yang dibangun sebagai gantinya
+///   adalah prefetch buffer awal + lanjut posisi + retry backoff.
 class VideoPlayerArea extends StatefulWidget {
   const VideoPlayerArea({
     required this.videoUrl,
@@ -30,11 +64,28 @@ class VideoPlayerArea extends StatefulWidget {
     this.posterUrl = '',
     this.showControls = true,
     this.onPositionChanged,
+    this.onDurationChanged,
+    this.onVideoEnded,
+    this.seekRequest,
+    this.hlsUrl = '',
+    this.prewarmed,
     super.key,
   });
 
   /// `video_url` mentah dari API (boleh relatif atau absolut).
   final String videoUrl;
+
+  /// `hls_url` mentah dari API ('' bila belum ada). Bila ada, URL
+  /// inilah yang dipakai (bukan [videoUrl]).
+  final String hlsUrl;
+
+  /// Controller prefetch episode ini (bila sudah siap saat widget
+  /// dipasang, dipakai langsung tanpa init ulang).
+  final PrewarmedController? prewarmed;
+
+  /// Permintaan seek dari luar (Slider progress induk): tiap nilai
+  /// baru langsung di-seek oleh controller.
+  final ValueNotifier<Duration>? seekRequest;
 
   /// File lokal yang baru dipilih (pratinjau formulir admin, sebelum
   /// diunggah). Bila ada, file inilah yang diputar, bukan [videoUrl].
@@ -55,6 +106,14 @@ class VideoPlayerArea extends StatefulWidget {
   /// rebuild berlebihan).
   final ValueChanged<Duration>? onPositionChanged;
 
+  /// Durasi terbaru (dilaporkan saat detik berubah) — untuk Slider
+  /// progress induk (posisi/durasi nyata dari controller).
+  final ValueChanged<Duration>? onDurationChanged;
+
+  /// Dipanggil SEKALI saat video mencapai akhir (untuk auto-next
+  /// induk; episode terakhir ditangani induk sebagai status akhir).
+  final VoidCallback? onVideoEnded;
+
   /// Status putar yang diminta tombol Putar/Jeda di luar area video
   /// (true = putar, false = jeda). Perubahan di sini memutar/menjeda
   /// controller; perubahan dari controller sendiri (mis. ketuk video)
@@ -72,23 +131,53 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
   VideoPlayerController? _controller;
   bool _initializing = false;
   String? _error;
+
+  /// Status retry otomatis (jaringan putus di tengah putar) — tampil
+  /// sebagai chip, BUKAN layar error yang mematikan.
+  String? _retryStatus;
+  Timer? _retryTimer;
+  int _retryGen = 0;
+  int _autoRetryCount = 0;
+
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  double _bufferedFraction = 0;
+  bool _isBufferingValue = false;
   bool _lastReportedPlaying = false;
+  bool _everInitialized = false;
+  bool _endedReported = false;
+  bool _resumeAfterRetry = false;
+  Duration _lastPosition = Duration.zero;
+  String _positionUrl = '';
 
-  String get _resolvedUrl => resolveMediaUrl(widget.videoUrl);
+  /// URL efektif yang sedang di-init (untuk reset state per-URL).
+  String _initUrl = '';
+
+  /// URL mentah yang dipakai: HLS dulu bila ada, MP4 bila tidak.
+  String get _effectiveRawUrl =>
+      widget.hlsUrl.isNotEmpty ? widget.hlsUrl : widget.videoUrl;
+
+  String get _resolvedUrl => resolveMediaUrl(_effectiveRawUrl);
 
   @override
   void initState() {
     super.initState();
     widget.playRequest.addListener(_onPlayRequest);
-    _initController();
+    widget.seekRequest?.addListener(_onSeekRequest);
+    final prewarmed = widget.prewarmed;
+    if (prewarmed != null && !prewarmed.claimed && prewarmed.ready) {
+      prewarmed.claimed = true;
+      _adoptController(prewarmed.controller);
+    } else {
+      _initController();
+    }
   }
 
   @override
   void didUpdateWidget(VideoPlayerArea oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoUrl != widget.videoUrl ||
+        oldWidget.hlsUrl != widget.hlsUrl ||
         oldWidget.localFile?.path != widget.localFile?.path) {
       _initController();
     }
@@ -97,8 +186,22 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
   @override
   void dispose() {
     widget.playRequest.removeListener(_onPlayRequest);
+    widget.seekRequest?.removeListener(_onSeekRequest);
+    _retryTimer?.cancel();
+    _retryGen++;
     _disposeController();
     super.dispose();
+  }
+
+  void _onSeekRequest() {
+    final target = widget.seekRequest?.value;
+    final controller = _controller;
+    if (target == null ||
+        controller == null ||
+        !controller.value.isInitialized) {
+      return;
+    }
+    controller.seekTo(target);
   }
 
   void _onPlayRequest() {
@@ -124,7 +227,61 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     }
   }
 
+  /// Pakai controller prefetch yang sudah init (tanpa init ulang):
+  /// posisi/durasi dibaca dari nilainya; putar bila diminta.
+  void _adoptController(VideoPlayerController controller) {
+    _controller = controller;
+    controller.addListener(_onControllerUpdate);
+    _initUrl = _resolvedUrl;
+    _everInitialized = true;
+    _endedReported = false;
+    if (mounted) {
+      setState(() {
+        _initializing = false;
+        _error = null;
+        _retryStatus = null;
+        _position = controller.value.position;
+        _duration = controller.value.duration;
+      });
+    }
+    if (widget.playRequest.value) {
+      controller.play();
+    }
+  }
+
+  /// Retry manual (tombol Coba Lagi): hitungan auto-retry di-reset dan
+  /// video dimainkan lagi setelah init (niat pengguna jelas: putar).
+  void _manualRetry() {
+    _autoRetryCount = 0;
+    _retryStatus = null;
+    _resumeAfterRetry = true;
+    _initController();
+  }
+
+  /// Jadwalkan satu percobaan ulang dengan backoff 2/4/8/16/16 detik.
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    const delays = <int>[2, 4, 8, 16, 16];
+    final delay = delays[_autoRetryCount.clamp(0, delays.length - 1)];
+    _autoRetryCount++;
+    _resumeAfterRetry = _lastReportedPlaying;
+    final gen = _retryGen;
+    if (mounted) {
+      setState(() {
+        _retryStatus =
+            'Jaringan putus, mencoba lagi… (percobaan $_autoRetryCount)';
+      });
+    }
+    _retryTimer = Timer(Duration(seconds: delay), () {
+      if (!mounted || gen != _retryGen) {
+        return;
+      }
+      _initController();
+    });
+  }
+
   Future<void> _initController() async {
+    _retryTimer?.cancel();
     _disposeController();
     final localFile = widget.localFile;
     if (localFile == null && _resolvedUrl.isEmpty) {
@@ -135,6 +292,17 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         });
       }
       return;
+    }
+    // URL baru = state per-URL di-reset (posisi/retry/akhir).
+    if (_resolvedUrl != _initUrl) {
+      _initUrl = _resolvedUrl;
+      _autoRetryCount = 0;
+      _lastPosition = Duration.zero;
+      _positionUrl = '';
+      _everInitialized = false;
+      _endedReported = false;
+      _retryStatus = null;
+      _retryGen++;
     }
     VideoPlayerController controller;
     if (localFile != null) {
@@ -160,30 +328,51 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         _error = null;
         _position = Duration.zero;
         _duration = Duration.zero;
+        _bufferedFraction = 0;
       });
     }
     try {
-      await controller.initialize();
+      // Timeout: jangan pernah "Memuat video…" tanpa akhir. File
+      // besar (kasus nyata 336 MB) tetap bisa init lewat progressive
+      // download, tapi bila 90 detik belum ada frame pertama, itu
+      // error yang harus terlihat + bisa di-retry — bukan spinner diam.
+      await controller.initialize().timeout(const Duration(seconds: 90));
     } on Exception catch (error) {
-      // Init gagal (URL stub, tautan halaman web, jaringan): error asli,
-      // bukan crash dan bukan placeholder gerak.
+      // Init gagal (URL stub, tautan halaman web, jaringan, timeout):
+      // error asli, bukan crash dan bukan placeholder gerak.
       if (!mounted || _controller != controller) {
         return;
       }
+      final message = error is TimeoutException
+          ? 'Memuat video terlalu lama (melebihi 90 detik). '
+              'Periksa koneksi lalu coba lagi.'
+          : 'Gagal memutar video: $error';
       setState(() {
         _initializing = false;
-        _error = 'Gagal memutar video: $error';
+        _error = message;
       });
       return;
     }
     if (!mounted || _controller != controller) {
       return;
     }
+    final duration = controller.value.duration;
     setState(() {
       _initializing = false;
-      _duration = controller.value.duration;
+      _everInitialized = true;
+      _retryStatus = null;
+      _autoRetryCount = 0;
+      _duration = duration;
     });
-    if (widget.playRequest.value) {
+    widget.onDurationChanged?.call(duration);
+    // Lanjut dari posisi terakhir (retry jaringan) bila masih valid.
+    if (_positionUrl == _resolvedUrl &&
+        _lastPosition > Duration.zero &&
+        _lastPosition < duration) {
+      await controller.seekTo(_lastPosition);
+    }
+    if (widget.playRequest.value || _resumeAfterRetry) {
+      _resumeAfterRetry = false;
       controller.play();
     }
   }
@@ -195,9 +384,20 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     }
     final value = controller.value;
     if (value.hasError) {
-      final message = value.errorDescription ?? 'Gagal memutar video.';
-      if (_error != message) {
-        setState(() => _error = message);
+      // Gagal DI TENGAH putar (pernah init sukses) = kemungkinan besar
+      // jaringan putus → retry otomatis + lanjut posisi, bukan layar
+      // error yang mematikan. Gagal init dari awal ditangani
+      // _initController (error + Coba Lagi manual).
+      if (_everInitialized && _autoRetryCount < 5) {
+        _scheduleRetry();
+      } else {
+        final message = value.errorDescription ?? 'Gagal memutar video.';
+        if (_error != message) {
+          setState(() {
+            _error = message;
+            _retryStatus = null;
+          });
+        }
       }
       return;
     }
@@ -208,13 +408,49 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     }
     final position = value.position;
     final duration = value.duration;
-    if (position.inSeconds != _position.inSeconds ||
-        duration.inSeconds != _duration.inSeconds) {
+    // Fraksi buffer NYATA dari controller (ujung buffer / durasi).
+    var buffered = 0.0;
+    if (duration > Duration.zero && value.buffered.isNotEmpty) {
+      var endMs = 0;
+      for (final range in value.buffered) {
+        if (range.end.inMilliseconds > endMs) {
+          endMs = range.end.inMilliseconds;
+        }
+      }
+      buffered =
+          (endMs / duration.inMilliseconds).clamp(0.0, 1.0).toDouble();
+    }
+    final bufferingChanged = value.isBuffering != _isBufferingValue;
+    final oldPositionSec = _position.inSeconds;
+    final oldDurationSec = _duration.inSeconds;
+    if (position.inSeconds != oldPositionSec ||
+        duration.inSeconds != oldDurationSec ||
+        bufferingChanged ||
+        (buffered - _bufferedFraction).abs() > 0.01) {
       setState(() {
         _position = position;
         _duration = duration;
+        _bufferedFraction = buffered;
+        _isBufferingValue = value.isBuffering;
+        if (position > Duration.zero) {
+          _lastPosition = position;
+          _positionUrl = _resolvedUrl;
+        }
       });
-      widget.onPositionChanged?.call(position);
+      if (position.inSeconds != oldPositionSec) {
+        widget.onPositionChanged?.call(position);
+      }
+      if (duration.inSeconds != oldDurationSec) {
+        widget.onDurationChanged?.call(duration);
+      }
+    }
+    // Akhir video: SEKALI saja (flag di-reset tiap init baru).
+    if (!_endedReported &&
+        duration > Duration.zero &&
+        position >= duration &&
+        _everInitialized) {
+      _endedReported = true;
+      widget.onVideoEnded?.call();
     }
   }
 
@@ -272,8 +508,18 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: _initController,
+                  onPressed: _manualRetry,
                   child: const Text('Coba Lagi'),
+                ),
+                // Catatan ini HANYA tampil saat video benar-benar gagal
+                // (bukan permanen di bawah Player): halaman web tidak
+                // bisa diputar di sini, hanya file video langsung/HLS.
+                const SizedBox(height: 16),
+                const Text(
+                  'Hanya file video langsung atau HLS yang bisa '
+                  'diputar di sini; tautan halaman web tidak bisa.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ],
             ),
@@ -292,6 +538,15 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
               CircularProgressIndicator(),
               SizedBox(height: 16),
               Text('Memuat video…', style: TextStyle(color: Colors.white)),
+              SizedBox(height: 8),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  'Koneksi lambat bisa membuat pemutaran lebih lama.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
             ],
           ),
         ),
@@ -330,7 +585,11 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
               onTap: _togglePlay,
               behavior: HitTestBehavior.translucent,
               child: Center(
-                child: controller.value.isPlaying
+                // Ikon play BESAR transparan tepat di tengah video
+                // saat pause (pola referensi) — TIDAK PERNAH saat
+                // sedang retry jaringan (chip retry yang tampil).
+                child: controller.value.isPlaying ||
+                        _retryStatus != null
                     ? const SizedBox.shrink()
                     : Container(
                         decoration: const BoxDecoration(
@@ -347,6 +606,86 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
               ),
             ),
           ),
+          // Chip retry otomatis (jaringan putus di tengah putar):
+          // status jelas + spinner kecil, video tidak ditutup layar
+          // error — begitu jaringan kembali, putar lanjut dari
+          // posisi terakhir.
+          if (_retryStatus != null)
+            Positioned.fill(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          _retryStatus!,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // Indikator buffering JUJUR (internet lambat): persen buffer
+          // nyata dari controller + bar, bukan spinner diam dan bukan
+          // ikon play palsu.
+          if (controller.value.isBuffering && _duration > Duration.zero)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: widget.showControls ? 72 : 20,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      'Internet lambat, sedang memuat… '
+                      '${(_bufferedFraction * 100).round()}%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    LinearProgressIndicator(
+                      value: _bufferedFraction,
+                      minHeight: 4,
+                      backgroundColor: Colors.white24,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Positioned(
             left: 0,
             right: 0,

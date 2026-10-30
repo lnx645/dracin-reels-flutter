@@ -646,7 +646,8 @@ class _ReelCardState extends State<ReelCard> {
         ),
       );
     }
-    if (episode.videoUrl.trim().isEmpty) {
+    if (episode.videoUrl.trim().isEmpty &&
+        episode.hlsUrl.trim().isEmpty) {
       return Container(
         color: Colors.black,
         child: const Center(
@@ -664,7 +665,10 @@ class _ReelCardState extends State<ReelCard> {
     return GestureDetector(
       onDoubleTap: _toggleLike,
       child: ReelVideo(
-        videoUrl: episode.videoUrl,
+        // HLS diutamakan bila ada (ABR ExoPlayer); MP4 hanya fallback.
+        videoUrl: episode.hlsUrl.isNotEmpty
+            ? episode.hlsUrl
+            : episode.videoUrl,
         isActive: widget.isActive,
         isVisible: widget.isVisible,
       ),

@@ -16,6 +16,7 @@ class Episode {
     this.isLiked = false,
     this.isBookmarked = false,
     this.videoUrl = '',
+    this.hlsUrl = '',
     this.locked = false,
     this.coinPrice = 0,
     this.seriesCreatedAtMs = 0,
@@ -48,6 +49,10 @@ class Episode {
   /// tidak memutar apa-apa, tanpa ikon play palsu).
   final String videoUrl;
 
+  /// `hls_url` episode dari detail API ('' bila belum ada). Bila ada,
+  /// preview Reels + Player MEMAKAI ini dulu (ABR ExoPlayer).
+  final String hlsUrl;
+
   /// Terkunci menurut API (bukan dari feed): tidak pernah autoplay.
   final bool locked;
 
@@ -76,6 +81,7 @@ class Episode {
       isLiked: isLiked ?? this.isLiked,
       isBookmarked: isBookmarked ?? this.isBookmarked,
       videoUrl: videoUrl,
+      hlsUrl: hlsUrl,
       locked: locked,
       coinPrice: coinPrice,
       seriesCreatedAtMs: seriesCreatedAtMs,
