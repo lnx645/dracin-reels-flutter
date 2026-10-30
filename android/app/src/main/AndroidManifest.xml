@@ -1,8 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- usesCleartextTraffic: backend masih HTTP (IP, belum HTTPS) —
+         Android 9+ memblokir cleartext secara default, tanpa ini login
+         selalu gagal "tidak dapat terhubung ke server" meski server hidup.
+         Hapus atribut ini saat backend sudah HTTPS. -->
     <application
         android:label="Dracin Reels"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
