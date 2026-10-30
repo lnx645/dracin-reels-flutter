@@ -10,6 +10,8 @@ import '../../../bookmark/presentation/pages/bookmark_page.dart';
 import '../../../history/presentation/pages/history_page.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/presentation/pages/series_detail_page.dart';
+import '../../../update/presentation/cubit/update_cubit.dart';
+import '../../../update/presentation/cubit/update_state.dart';
 import '../../../wallet/domain/repositories/wallet_repository.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/pages/rewards_page.dart';
@@ -286,6 +288,69 @@ class ProfileView extends StatelessWidget {
                             'Versi ${info.version} '
                             '(build ${info.buildNumber})',
                             style: theme.textTheme.bodySmall,
+                          ),
+                        );
+                      },
+                    ),
+                    // Tombol "Periksa Update": cek PAKSA sekarang tanpa
+                    // peduli jeda 24 jam cek otomatis. Perbaikan keluhan
+                    // "aplikasi terinstal kok gak ada dialog update":
+                    // cek otomatis hanya sekali sehari, jadi rilis baru
+                    // tidak memunculkan dialog sampai cek berikutnya.
+                    // - Memeriksa → tombol nonaktif + "Memeriksa…".
+                    // - Update tersedia → dialog (dari listener gate,
+                    //   cubit yang sama).
+                    // - Sudah terbaru → status di bawah tombol.
+                    // - Gagal → snackbar (dari listener gate).
+                    const SizedBox(height: 12),
+                    BlocBuilder<UpdateCubit, UpdateState>(
+                      builder: (context, updateState) {
+                        final checking =
+                            updateState is UpdateChecking;
+                        return Center(
+                          child: Column(
+                            children: <Widget>[
+                              OutlinedButton.icon(
+                                onPressed: checking
+                                    ? null
+                                    : () => context
+                                        .read<UpdateCubit>()
+                                        .checkNow(),
+                                icon: checking
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child:
+                                            CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.system_update),
+                                label: Text(
+                                  checking
+                                      ? 'Memeriksa…'
+                                      : 'Periksa Update',
+                                ),
+                              ),
+                              if (updateState is UpdateUpToDate) ...<Widget>[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    const Icon(
+                                      Icons.check_circle,
+                                      size: 16,
+                                      color: Colors.green,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Sudah versi terbaru.',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         );
                       },

@@ -12,6 +12,13 @@ class UpdateChecking extends UpdateState {
   const UpdateChecking();
 }
 
+/// Cek paksa (tombol "Periksa Update") memastikan tidak ada versi
+/// lebih baru. State ini hanya dipakai cek manual — cek otomatis yang
+/// tidak menemukan update tetap diam (UpdateInitial).
+class UpdateUpToDate extends UpdateState {
+  const UpdateUpToDate();
+}
+
 /// Pembaruan tersedia dan menunggu keputusan pengguna.
 class UpdateAvailable extends UpdateState {
   const UpdateAvailable(this.info);

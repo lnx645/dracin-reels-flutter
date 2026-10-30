@@ -43,7 +43,33 @@ class UpdateCubit extends Cubit<UpdateState> {
     if (now - last < checkInterval.inMilliseconds) {
       return;
     }
-    await prefs.setInt(_lastCheckKey, now);
+    await _runCheck(prefs, now, forced: false);
+  }
+
+  /// Cek PAKSA dari tombol "Periksa Update" di Profil: abaikan jeda
+  /// 24 jam sepenuhnya. Ini perbaikan keluhan "aplikasi terinstal kok
+  /// gak ada dialog update" — cek otomatis hanya sekali sehari, jadi
+  /// rilis yang terbit sesudah cek terakhir tidak memunculkan dialog
+  /// sampai cek berikutnya (hingga 24 jam). Hasil cek paksa:
+  /// - update tersedia → UpdateAvailable → dialog (lewat listener gate);
+  /// - sudah terbaru → UpdateUpToDate (status di Profil);
+  /// - gagal → UpdateError (snackbar lewat listener gate, bukan diam).
+  Future<void> checkNow() async {
+    if (state is UpdateChecking ||
+        state is UpdateDownloading ||
+        state is UpdateAvailable) {
+      return;
+    }
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await _runCheck(prefs, now, forced: true);
+  }
+
+  Future<void> _runCheck(
+    SharedPreferences prefs,
+    int now, {
+    required bool forced,
+  }) async {
     emit(const UpdateChecking());
     try {
       final PackageInfo info = await PackageInfo.fromPlatform();
@@ -51,15 +77,28 @@ class UpdateCubit extends Cubit<UpdateState> {
         currentVersion: info.version,
         currentVersionCode: int.tryParse(info.buildNumber) ?? 0,
       );
+      // Waktu cek dicatat HANYA bila request berhasil. Sebelumnya
+      // dicatat SEBELUM fetch — cek yang gagal jaringan ikut membakar
+      // jatah 24 jam berikutnya (dialog makin lama tidak muncul).
+      await prefs.setInt(_lastCheckKey, now);
       if (latest == null) {
-        emit(const UpdateInitial());
+        emit(forced ? const UpdateUpToDate() : const UpdateInitial());
         return;
       }
       _pending = latest;
       emit(UpdateAvailable(latest));
     } catch (_) {
-      // Cek gagal (jaringan/API): diam, coba lagi besok.
-      emit(const UpdateInitial());
+      // Cek otomatis gagal: diam, coba lagi besok. Cek paksa gagal:
+      // beri tahu pengguna (ia yang meminta cek ini).
+      if (forced) {
+        emit(
+          const UpdateError(
+            'Gagal memeriksa update. Periksa koneksi internet.',
+          ),
+        );
+      } else {
+        emit(const UpdateInitial());
+      }
     }
   }
 
