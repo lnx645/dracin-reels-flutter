@@ -19,6 +19,7 @@ class DracinButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.variant = DracinButtonVariant.primary,
+    this.dense = false,
     super.key,
   });
 
@@ -27,6 +28,10 @@ class DracinButton extends StatelessWidget {
   final IconData? icon;
   final bool isLoading;
   final DracinButtonVariant variant;
+
+  /// Varian rapat (tinggi 34, teks 13): untuk baris search, kartu
+  /// compact, dan tempat lain yang tidak boleh memakan tinggi layar.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +54,7 @@ class DracinButton extends StatelessWidget {
     }
     final effectivePressed = isLoading ? null : onPressed;
     return SizedBox(
-      height: 48,
+      height: dense ? 34 : 48,
       child: ElevatedButton(
         onPressed: effectivePressed,
         style: ElevatedButton.styleFrom(
@@ -62,9 +67,9 @@ class DracinButton extends StatelessWidget {
             borderRadius:
                 BorderRadius.circular(DracinSpacing.radiusButton),
           ),
-          textStyle: const TextStyle(
+          textStyle: TextStyle(
             fontFamily: 'PlusJakartaSans',
-            fontSize: 15,
+            fontSize: dense ? 13 : 15,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -81,7 +86,7 @@ class DracinButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   if (icon != null) ...<Widget>[
-                    Icon(icon, size: 20),
+                    Icon(icon, size: dense ? 16 : 20),
                     const SizedBox(width: DracinSpacing.sm),
                   ],
                   Text(label),
@@ -101,6 +106,7 @@ class DracinChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.dense = false,
     super.key,
   });
 
@@ -108,14 +114,18 @@ class DracinChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Varian rapat (padding h10/v5, teks 12): untuk baris filter
+  /// Jelajahi yang harus satu baris geser dan tidak memakan tinggi.
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: DracinSpacing.lg,
-          vertical: 10,
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 10 : DracinSpacing.lg,
+          vertical: dense ? 5 : 10,
         ),
         decoration: BoxDecoration(
           color: selected ? DracinColors.accent : DracinColors.surface,
@@ -129,7 +139,7 @@ class DracinChip extends StatelessWidget {
           label,
           style: TextStyle(
             fontFamily: 'PlusJakartaSans',
-            fontSize: 13,
+            fontSize: dense ? 12 : 13,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
             color: selected ? Colors.white : DracinColors.textPrimary,
           ),

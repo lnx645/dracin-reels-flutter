@@ -125,9 +125,11 @@ class _MainShellState extends State<MainShell> {
     ];
     return Scaffold(
       body: pages[_index],
-      bottomNavigationBar: DracinBottomNav(
-        currentIndex: _index,
-        onTap: (index) => setState(() => _index = index),
+      bottomNavigationBar: SafeArea(
+        child: DracinBottomNav(
+          currentIndex: _index,
+          onTap: (index) => setState(() => _index = index),
+        ),
       ),
     );
   }

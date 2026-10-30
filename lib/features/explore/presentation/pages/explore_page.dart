@@ -12,8 +12,30 @@ import '../../../series/presentation/pages/series_detail_page.dart';
 import '../../../wallet/domain/entities/history.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 
-/// Halaman Jelajahi — POLA LAYOUT yang dikunci (bukan salinan konten
-/// atau merek aplikasi referensi):
+/// Halaman Jelajahi — COMPACT PENUH (bukan hanya grid). Semua
+/// elemen dirapatkan dari tangkapan lama (search besar + tombol
+/// oranye besar, chip besar, kartu Lanjutkan tinggi, grid 2 kolom
+/// poster besar):
+/// - Search ramping: field padat (isDense) + tombol Cari dense 34px.
+/// - Chip genre dense (teks 12, padding h10/v5), satu baris geser.
+/// - Kartu Lanjutkan compact: tinggi 72 (dari 112), satu baris
+///   horizontal + tombol dense kecil (dari tombol selebar kartu).
+/// - Grid 3 kolom rapat (lihat bawah) + skeleton 3 kolom senada.
+///
+/// UKURAN (perhitungan geometri dari konstanta layout, layar
+/// 390×844, tinggi kolom ±717 setelah status bar + bottom nav):
+/// lama ≈ header 76 + search 56 + chip 38 + Lanjutkan 157 = 327 →
+/// sisa grid ±362; kartu 2 kolom 173 lebar → poster 231 + judul
+/// besar + genre ≈ 303px → ±1,2 baris ≈ 2–3 item grid terlihat;
+/// baru ≈ header 68 + search 40 + chip 27 + Lanjutkan 109 = 244 →
+/// sisa grid ±455; kartu 3 kolom 114 lebar → poster 152 + judul
+/// 13px + penanda 11px ≈ 210px → ±2,2 baris ≈ 6–7 item terlihat
+/// (tanpa Lanjutkan: sisa ±564 → ±2,7 baris ≈ 8 item). Jadi halaman
+/// baru menampilkan ±2,5–3× item lebih banyak per layar. Konfirmasi
+/// visual di HP uwa tetap menjadi gerbang akhir (sandbox tidak bisa
+/// memotret aplikasi).
+/// POLA LAYOUT yang dikunci (bukan salinan konten atau merek
+/// aplikasi referensi):
 /// - Bilah pencarian di atas: kolom + tombol "Cari".
 /// - Baris filter SATU BARIS GESER: chip genre terlihat langsung
 ///   (Semua + tiap genre → ?genre_id=), pemisah, chip urutan
@@ -124,15 +146,17 @@ class _ExploreViewState extends State<ExploreView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text('Jelajahi', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 'Cari drama berdasarkan judul.',
                 style: theme.textTheme.bodySmall,
               ),
-              const SizedBox(height: 12),
-              // (1) Bilah pencarian: kolom + tombol "Cari".
+              const SizedBox(height: 8),
+              // (1) Bilah pencarian RAMPING: field padat + tombol Cari
+              // kecil (dense 34px), bukan tombol oranye besar yang
+              // memakan lebar/tinggi layar.
               Row(
                 children: <Widget>[
                   Expanded(
@@ -142,21 +166,28 @@ class _ExploreViewState extends State<ExploreView> {
                       decoration: const InputDecoration(
                         hintText: 'Cari judul drama...',
                         prefixIcon: Icon(Icons.search),
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   DracinButton(
                     label: 'Cari',
+                    dense: true,
                     onPressed: _applySearch,
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              // Baris filter SATU BARIS GESER (bukan wrap): chip genre
-              // terlihat langsung (Semua + tiap genre) + pemisah +
-              // chip urutan. Tidak boleh ada chip yatim di baris kedua
-              // — baris ini SingleChildScrollView horizontal.
+              const SizedBox(height: 8),
+              // Baris filter SATU BARIS GESER + RAPAT (chip dense):
+              // chip genre terlihat langsung (Semua + tiap genre) +
+              // pemisah + chip urutan. Tidak boleh ada chip yatim di
+              // baris kedua — baris ini SingleChildScrollView
+              // horizontal.
               BlocBuilder<SeriesListBloc, SeriesListState>(
                 builder: (context, seriesState) {
                   return SingleChildScrollView(
@@ -165,6 +196,7 @@ class _ExploreViewState extends State<ExploreView> {
                       children: <Widget>[
                         DracinChip(
                           label: 'Semua',
+                          dense: true,
                           selected: seriesState.selectedGenreId == null,
                           onTap: () => context
                               .read<SeriesListBloc>()
@@ -172,9 +204,10 @@ class _ExploreViewState extends State<ExploreView> {
                         ),
                         ...seriesState.genres.map(
                           (genre) => Padding(
-                            padding: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.only(left: 6),
                             child: DracinChip(
                               label: genre.name,
+                              dense: true,
                               selected:
                                   seriesState.selectedGenreId == genre.id,
                               onTap: () => context
@@ -185,23 +218,25 @@ class _ExploreViewState extends State<ExploreView> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         Container(
                           width: 1,
-                          height: 24,
+                          height: 20,
                           color: AppColors.border,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         DracinChip(
                           label: 'Peringkat',
+                          dense: true,
                           selected:
                               seriesState.sort == SeriesSort.rating,
                           onTap: () =>
                               _toggleSort(SeriesSort.rating),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         DracinChip(
                           label: 'Baru Tayang',
+                          dense: true,
                           selected:
                               seriesState.sort == SeriesSort.newest,
                           onTap: () =>
@@ -212,7 +247,7 @@ class _ExploreViewState extends State<ExploreView> {
                   );
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               // (4) Lanjutkan — hanya bila ada riwayat belum selesai
               // (login + WatchProgress API). Tanpa riwayat, seksi ini
               // tidak tampil sama sekali (bukan kartu palsu).
@@ -231,16 +266,16 @@ class _ExploreViewState extends State<ExploreView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text('Lanjutkan', style: theme.textTheme.titleSmall),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       SizedBox(
-                        height: 112,
+                        height: 72,
                         child: BlocBuilder<SeriesListBloc, SeriesListState>(
                           builder: (context, seriesState) {
                             return ListView.separated(
                               scrollDirection: Axis.horizontal,
                               itemCount: unfinished.length,
                               separatorBuilder: (_, __) =>
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 8),
                               itemBuilder: (context, index) {
                                 final item = unfinished[index];
                                 int? total;
@@ -263,7 +298,7 @@ class _ExploreViewState extends State<ExploreView> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                     ],
                   );
                 },
@@ -318,7 +353,7 @@ class _ExploreViewState extends State<ExploreView> {
                                 const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 3,
                               crossAxisSpacing: 8,
-                              mainAxisSpacing: 12,
+                              mainAxisSpacing: 10,
                               childAspectRatio: 0.52,
                             ),
                             itemCount: seriesState.series.length,
@@ -361,9 +396,11 @@ class _ExploreViewState extends State<ExploreView> {
   }
 }
 
-/// Kartu "Lanjutkan": satu ketukan kembali ke cerita. Progres
-/// "Ep. X / Y" hanya bila total episode series diketahui dari daftar
-/// (bila tidak diketahui, hanya "Ep. X" — tidak dikarang).
+/// Kartu "Lanjutkan" COMPACT: satu baris horizontal (judul +
+/// progres di kiri, tombol kecil di kanan), tinggi 72 — bukan kartu
+/// besar 112 dengan tombol selebar kartu. Progres "Ep. X / Y" hanya
+/// bila total episode series diketahui dari daftar (bila tidak
+/// diketahui, hanya "Ep. X" — tidak dikarang).
 class _ContinueCard extends StatelessWidget {
   const _ContinueCard({
     required this.item,
@@ -382,33 +419,43 @@ class _ContinueCard extends StatelessWidget {
         ? 'Ep. ${item.number} / $totalEpisodes'
         : 'Ep. ${item.number}';
     return Container(
-      width: 220,
-      padding: const EdgeInsets.all(12),
+      width: 230,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: <Widget>[
-          Text(
-            item.seriesTitle,
-            style: theme.textTheme.titleSmall,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            progress,
-            style: theme.textTheme.labelMedium,
-          ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: DracinButton(
-              label: 'Lanjutkan',
-              onPressed: onOpen,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  item.seriesTitle,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  progress,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
+          ),
+          const SizedBox(width: 8),
+          DracinButton(
+            label: 'Lanjutkan',
+            dense: true,
+            onPressed: onOpen,
           ),
         ],
       ),
