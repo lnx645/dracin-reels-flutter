@@ -8,6 +8,8 @@ class FeedState {
     this.tab = FeedTab.forYou,
     this.isLoading = false,
     this.errorMessage,
+    this.followedSeriesIds = const <int>{},
+    this.preferenceScores = const <int, int>{},
   });
 
   final List<Episode> episodes;
@@ -21,12 +23,42 @@ class FeedState {
   /// Pesan error ASLI dari request API terakhir; null bila tidak ada.
   final String? errorMessage;
 
-  /// Daftar yang tampil: Untuk Anda = semua, Mengikuti = nomor ganjil.
+  /// Id series yang di-bookmark pengguna (dari API /bookmarks).
+  /// Mengikuti HANYA dari sini — aturan lama "nomor ganjil" adalah
+  /// data palsu dan sudah dihapus.
+  final Set<int> followedSeriesIds;
+
+  /// Skor preferensi per series (dari riwayat/like/bookmark + genre):
+  /// 0/absen = tanpa sinyal. Dipakai mengurutkan Untuk Anda; bila
+  /// semua skor 0 (belum masuk / belum ada data) → urutan default
+  /// terbaru, TANPA klaim "dipersonalisasi" di UI.
+  final Map<int, int> preferenceScores;
+
+  /// Daftar yang tampil: Mengikuti = episode dari series yang
+  /// di-bookmark; Untuk Anda = semua, diurutkan skor preferensi
+  /// tertinggi dulu, lalu series terbaru dulu, lalu nomor episode.
   List<Episode> get visibleEpisodes {
-    if (tab == FeedTab.following) {
-      return episodes.where((episode) => episode.number.isOdd).toList();
-    }
-    return episodes;
+    final List<Episode> list = tab == FeedTab.following
+        ? episodes
+            .where((episode) => followedSeriesIds.contains(episode.seriesId))
+            .toList()
+        : episodes.toList();
+    list.sort((a, b) {
+      final scoreA = preferenceScores[a.seriesId] ?? 0;
+      final scoreB = preferenceScores[b.seriesId] ?? 0;
+      if (scoreA != scoreB) {
+        return scoreB.compareTo(scoreA);
+      }
+      if (a.seriesCreatedAtMs != b.seriesCreatedAtMs) {
+        return b.seriesCreatedAtMs.compareTo(a.seriesCreatedAtMs);
+      }
+      final bySeries = a.seriesId.compareTo(b.seriesId);
+      if (bySeries != 0) {
+        return bySeries;
+      }
+      return a.number.compareTo(b.number);
+    });
+    return list;
   }
 
   FeedState copyWith({
@@ -36,6 +68,8 @@ class FeedState {
     bool? isLoading,
     String? errorMessage,
     bool clearError = false,
+    Set<int>? followedSeriesIds,
+    Map<int, int>? preferenceScores,
   }) {
     return FeedState(
       episodes: episodes ?? this.episodes,
@@ -43,6 +77,8 @@ class FeedState {
       tab: tab ?? this.tab,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
+      followedSeriesIds: followedSeriesIds ?? this.followedSeriesIds,
+      preferenceScores: preferenceScores ?? this.preferenceScores,
     );
   }
 }

@@ -38,6 +38,7 @@ class ApiEpisodeDataSource {
         continue;
       }
       final List<String> hashtags = _hashtagsOf(item);
+      final int seriesCreatedAtMs = _createdAtMsOf(item);
       final List<Map<String, dynamic>> rawEpisodes =
           await _fetchSeriesEpisodes(seriesId);
       for (final Map<String, dynamic> raw in rawEpisodes) {
@@ -58,6 +59,14 @@ class ApiEpisodeDataSource {
             gradient: _gradients[number % _gradients.length],
             seriesId: seriesId,
             apiEpisodeId: apiId,
+            videoUrl: raw['video_url'] is String
+                ? raw['video_url'] as String
+                : '',
+            locked: raw['locked'] is bool ? raw['locked'] as bool : false,
+            coinPrice: raw['coin_price'] is int
+                ? raw['coin_price'] as int
+                : 0,
+            seriesCreatedAtMs: seriesCreatedAtMs,
           ),
         );
       }
@@ -70,6 +79,14 @@ class ApiEpisodeDataSource {
       return a.number.compareTo(b.number);
     });
     return episodes;
+  }
+
+  int _createdAtMsOf(Map<String, dynamic> seriesJson) {
+    final dynamic raw = seriesJson['created_at'];
+    if (raw is! String) {
+      return 0;
+    }
+    return DateTime.tryParse(raw)?.millisecondsSinceEpoch ?? 0;
   }
 
   List<String> _hashtagsOf(Map<String, dynamic> seriesJson) {

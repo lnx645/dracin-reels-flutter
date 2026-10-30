@@ -15,6 +15,10 @@ class Episode {
     this.apiEpisodeId = 0,
     this.isLiked = false,
     this.isBookmarked = false,
+    this.videoUrl = '',
+    this.locked = false,
+    this.coinPrice = 0,
+    this.seriesCreatedAtMs = 0,
   });
 
   /// Id unik gabungan: `s{seriesId}e{apiEpisodeId}` (dari API).
@@ -40,6 +44,20 @@ class Episode {
   final bool isLiked;
   final bool isBookmarked;
 
+  /// `video_url` episode dari detail API ('' bila tidak ada — kartu
+  /// tidak memutar apa-apa, tanpa ikon play palsu).
+  final String videoUrl;
+
+  /// Terkunci menurut API (bukan dari feed): tidak pernah autoplay.
+  final bool locked;
+
+  /// Harga koin episode (untuk overlay kunci, sama seperti Player).
+  final int coinPrice;
+
+  /// Milidetik epoch `created_at` series (0 = tidak diketahui) —
+  /// urutan default feed = terbaru dulu.
+  final int seriesCreatedAtMs;
+
   Episode copyWith({bool? isLiked, bool? isBookmarked}) {
     return Episode(
       id: id,
@@ -57,6 +75,10 @@ class Episode {
       apiEpisodeId: apiEpisodeId,
       isLiked: isLiked ?? this.isLiked,
       isBookmarked: isBookmarked ?? this.isBookmarked,
+      videoUrl: videoUrl,
+      locked: locked,
+      coinPrice: coinPrice,
+      seriesCreatedAtMs: seriesCreatedAtMs,
     );
   }
 }

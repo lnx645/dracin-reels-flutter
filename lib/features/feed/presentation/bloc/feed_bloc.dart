@@ -20,6 +20,8 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
     on<FeedIndexChanged>(_onIndexChanged);
     on<FeedEpisodeJumped>(_onEpisodeJumped);
     on<FeedTabChanged>(_onTabChanged);
+    on<FeedPreferencesChanged>(_onPreferencesChanged);
+    on<FeedFollowingChanged>(_onFollowingChanged);
   }
 
   final EpisodeRepository _repository;
@@ -84,5 +86,36 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
 
   void _onTabChanged(FeedTabChanged event, Emitter<FeedState> emit) {
     emit(state.copyWith(tab: event.tab, currentIndex: 0));
+  }
+
+  void _onPreferencesChanged(
+    FeedPreferencesChanged event,
+    Emitter<FeedState> emit,
+  ) {
+    // Pertahankan episode yang sedang tampil di posisi barunya.
+    final visible = state.visibleEpisodes;
+    final String? currentId = visible.isEmpty
+        ? null
+        : visible[state.currentIndex.clamp(0, visible.length - 1)].id;
+    final next = state.copyWith(preferenceScores: event.scores);
+    var index = 0;
+    if (currentId != null) {
+      final found =
+          next.visibleEpisodes.indexWhere((episode) => episode.id == currentId);
+      index = found == -1 ? 0 : found;
+    }
+    emit(next.copyWith(currentIndex: index));
+  }
+
+  void _onFollowingChanged(
+    FeedFollowingChanged event,
+    Emitter<FeedState> emit,
+  ) {
+    emit(
+      state.copyWith(
+        followedSeriesIds: event.seriesIds,
+        currentIndex: state.tab == FeedTab.following ? 0 : state.currentIndex,
+      ),
+    );
   }
 }

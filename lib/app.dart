@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'core/api/api_client.dart';
+import 'core/navigation/route_observer.dart';
 import 'core/session/session_cubit.dart';
 import 'core/theme/app_theme.dart';
 import 'features/admin/domain/repositories/admin_repository.dart';
@@ -71,6 +72,7 @@ class DracinApp extends StatelessWidget {
             title: 'Dracin Reels',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.dark,
+            navigatorObservers: <NavigatorObserver>[appRouteObserver],
             home: const UpdateGate(child: MainShell()),
             routes: <String, WidgetBuilder>{
               '/login': (_) => const LoginPage(),
