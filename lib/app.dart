@@ -13,6 +13,7 @@ import 'features/feed/presentation/bloc/feed_bloc.dart';
 import 'features/feed/presentation/bloc/feed_event.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'features/notifications/presentation/pages/notifications_page.dart';
+import 'features/player/presentation/pages/player_page.dart';
 import 'features/profile/presentation/pages/profile_page.dart';
 import 'features/series/domain/repositories/series_repository.dart';
 import 'features/wallet/domain/repositories/wallet_repository.dart';
@@ -93,22 +94,21 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  /// Bertambah setiap kali ada episode yang dibuka dari luar feed,
-  /// supaya Beranda berpindah ke mode Reels.
-  int _reelsNonce = 0;
-
+  /// Satu halaman Player untuk semua jalur: feed, detail series,
+  /// "Tonton Semua", Riwayat/Lanjutkan Nonton — ketuk episode di mana
+  /// pun membuka PlayerPage yang sama (bukan putar inline di kartu).
   void _openEpisode(String episodeId) {
-    context.read<FeedBloc>().add(FeedEpisodeJumped(episodeId));
-    setState(() {
-      _index = 0;
-      _reelsNonce++;
-    });
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlayerPage(episodeId: episodeId),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomePage(onOpenEpisode: _openEpisode, reelsNonce: _reelsNonce),
+      HomePage(onOpenEpisode: _openEpisode),
       ExplorePage(onOpenEpisode: _openEpisode),
       const CreatePage(),
       const NotificationsPage(),

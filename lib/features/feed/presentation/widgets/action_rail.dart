@@ -29,6 +29,8 @@ class _RailButton extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           child: IconButton(
+            padding: const EdgeInsets.all(6),
+            iconSize: 22,
             icon: Icon(
               icon,
               color: active ? AppColors.accent : Colors.white,
@@ -70,19 +72,19 @@ class ActionRail extends StatelessWidget {
           onPressed: onLike,
           active: episode.isLiked,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _RailButton(
           icon: Icons.chat_bubble_outline,
           label: formatCount(episode.comments),
           onPressed: onComment,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _RailButton(
           icon: Icons.share,
           label: formatCount(episode.shares),
           onPressed: onShare,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _RailButton(
           icon: episode.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
           label: 'Simpan',

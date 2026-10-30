@@ -8,11 +8,17 @@ class EpisodeCover extends StatelessWidget {
   const EpisodeCover({
     required this.episode,
     required this.isPlaying,
+    this.bottomPadding = 0,
     super.key,
   });
 
   final Episode episode;
   final bool isPlaying;
+
+  /// Ruang kosong di bawah konten terpusat (dipakai feed untuk
+  /// mencadangkan zona caption, supaya label episode tidak menimpa
+  /// deskripsi).
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -24,28 +30,31 @@ class EpisodeCover extends StatelessWidget {
           colors: episode.gradient.map(Color.new).toList(),
         ),
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Color(0x33000000),
-                shape: BoxShape.circle,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomPadding),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: Color(0x33000000),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 64,
+                  color: Colors.white,
+                ),
               ),
-              child: Icon(
-                isPlaying ? Icons.pause : Icons.play_arrow,
-                size: 64,
-                color: Colors.white,
+              const SizedBox(height: 16),
+              Text(
+                'Episode ${episode.number}',
+                style: Theme.of(context).textTheme.labelLarge,
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Episode ${episode.number}',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

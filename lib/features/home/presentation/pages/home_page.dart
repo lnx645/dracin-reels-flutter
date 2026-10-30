@@ -13,17 +13,14 @@ enum HomeMode { series, reels }
 
 /// Beranda: TIDAK hanya feed vertikal. Mode Series menampilkan seksi
 /// (Trending, Rekomendasi, per genre) dengan tombol "Tonton Semua";
-/// mode Reels menampilkan feed vertikal. Pindah mode otomatis ke Reels
-/// bila ada episode yang dibuka dari luar (nonce berubah).
+/// mode Reels menampilkan feed vertikal.
 class HomePage extends StatefulWidget {
   const HomePage({
     required this.onOpenEpisode,
-    required this.reelsNonce,
     super.key,
   });
 
   final void Function(String episodeId) onOpenEpisode;
-  final int reelsNonce;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -31,14 +28,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   HomeMode _mode = HomeMode.series;
-
-  @override
-  void didUpdateWidget(covariant HomePage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.reelsNonce != oldWidget.reelsNonce) {
-      setState(() => _mode = HomeMode.reels);
-    }
-  }
 
   void _openSeries(BuildContext context, int seriesId) {
     Navigator.of(context).push(
@@ -139,6 +128,7 @@ class _HomePageState extends State<HomePage> {
                         setState(() => _mode = HomeMode.series);
                       }
                     },
+                    onOpenEpisode: widget.onOpenEpisode,
                   ),
           ),
         ],

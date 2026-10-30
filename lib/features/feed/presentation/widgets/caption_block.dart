@@ -3,19 +3,20 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/episode.dart';
 
-/// Caption bawah: judul, deskripsi, tagar, tombol Putar/Jeda + Daftar.
+/// Caption bawah: judul, deskripsi, tagar, tombol Tonton + Daftar.
+/// Feed hanya browsing: Tonton membuka halaman Player khusus.
 class CaptionBlock extends StatelessWidget {
   const CaptionBlock({
     required this.episode,
-    required this.isPlaying,
-    required this.onPlayPause,
+    required this.onWatch,
     required this.onShowEpisodes,
     super.key,
   });
 
   final Episode episode;
-  final bool isPlaying;
-  final VoidCallback onPlayPause;
+
+  /// Buka halaman Player untuk episode ini.
+  final VoidCallback onWatch;
   final VoidCallback onShowEpisodes;
 
   @override
@@ -44,15 +45,15 @@ class CaptionBlock extends StatelessWidget {
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppColors.textSecondary,
           ),
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 12),
         Row(
           children: <Widget>[
             ElevatedButton(
-              onPressed: onPlayPause,
-              child: Text(isPlaying ? 'Jeda' : 'Putar'),
+              onPressed: onWatch,
+              child: const Text('Tonton'),
             ),
             const SizedBox(width: 12),
             OutlinedButton(

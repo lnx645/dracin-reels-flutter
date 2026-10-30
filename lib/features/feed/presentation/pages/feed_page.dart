@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../wallet/domain/repositories/wallet_repository.dart';
-import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/widgets/comments_sheet.dart';
 import '../../domain/entities/episode.dart';
 import '../bloc/feed_bloc.dart';
@@ -20,6 +19,7 @@ class FeedPage extends StatefulWidget {
     this.showModeSwitch = false,
     this.isSeriesMode = false,
     this.onModeChanged,
+    required this.onOpenEpisode,
     super.key,
   });
 
@@ -29,6 +29,10 @@ class FeedPage extends StatefulWidget {
   final bool showModeSwitch;
   final bool isSeriesMode;
   final ValueChanged<bool>? onModeChanged;
+
+  /// Feed hanya browsing: ketuk kartu/tombol Tonton membuka PlayerPage
+  /// lewat callback ini (satu jalur dengan detail series & riwayat).
+  final void Function(String episodeId) onOpenEpisode;
 
   @override
   State<FeedPage> createState() => _FeedPageState();
@@ -87,19 +91,16 @@ class _FeedPageState extends State<FeedPage> {
                 controller: _controller,
                 itemCount: episodes.length,
                 onPageChanged: (index) {
+                  // Browsing saja: ganti episode di feed TIDAK mencatat
+                  // riwayat. Riwayat hanya tercatat saat episode dibuka
+                  // di halaman Player.
                   context.read<FeedBloc>().add(FeedIndexChanged(index));
-                  final episode = episodes[index];
-                  // Otomatis tercatat ke riwayat (lokal + API bila masuk).
-                  context.read<WalletBloc>().add(
-                        WalletContinueSaved(
-                          episodeId: episode.number,
-                          title: episode.title,
-                          number: episode.number,
-                        ),
-                      );
                 },
                 itemBuilder: (context, index) {
-                  return ReelCard(episode: episodes[index]);
+                  return ReelCard(
+                    episode: episodes[index],
+                    onOpenEpisode: widget.onOpenEpisode,
+                  );
                 },
               ),
             ),
@@ -111,18 +112,25 @@ class _FeedPageState extends State<FeedPage> {
 }
 
 /// Satu layar reels: cover, rel aksi kanan, caption bawah.
-/// Ketuk video = putar/jeda (state UI), ketuk 2x = suka.
+/// Feed hanya browsing: ketuk video/tombol Tonton = buka halaman Player
+/// (bukan putar inline), ketuk 2x = suka.
 class ReelCard extends StatefulWidget {
-  const ReelCard({required this.episode, super.key});
+  const ReelCard({
+    required this.episode,
+    required this.onOpenEpisode,
+    super.key,
+  });
 
   final Episode episode;
+
+  /// Dibuka dengan id sampel feed (`ep1`..`ep5`) sesuai nomor episode.
+  final void Function(String episodeId) onOpenEpisode;
 
   @override
   State<ReelCard> createState() => _ReelCardState();
 }
 
 class _ReelCardState extends State<ReelCard> {
-  bool _isPlaying = false;
 
   void _toggleLike() {
     final episode = widget.episode;
@@ -148,16 +156,16 @@ class _ReelCardState extends State<ReelCard> {
     );
   }
 
+  void _openPlayer(String episodeId) {
+    widget.onOpenEpisode(episodeId);
+  }
+
   void _showComments() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => CommentsSheet(episodeId: widget.episode.number),
     );
-  }
-
-  void _togglePlay() {
-    setState(() => _isPlaying = !_isPlaying);
   }
 
   void _showPlaceholderSheet(String title, String message) {
@@ -200,10 +208,8 @@ class _ReelCardState extends State<ReelCard> {
                 return ListTile(
                   title: Text('Episode ${episode.number} - ${episode.title}'),
                   onTap: () {
-                    context
-                        .read<FeedBloc>()
-                        .add(FeedEpisodeJumped(episode.id));
                     Navigator.of(sheetContext).pop();
+                    _openPlayer(episode.id);
                   },
                 );
               }).toList(),
@@ -218,28 +224,38 @@ class _ReelCardState extends State<ReelCard> {
   Widget build(BuildContext context) {
     final episode = widget.episode;
     return GestureDetector(
-      onTap: _togglePlay,
+      // Ketuk kartu = buka halaman Player (bukan putar inline).
+      onTap: () => _openPlayer(episode.id),
       onDoubleTap: _toggleLike,
       child: Stack(
         children: <Widget>[
           Positioned.fill(
             child: EpisodeCover(
               episode: episode,
-              isPlaying: _isPlaying,
+              isPlaying: false,
+              // Cadangkan zona caption bawah supaya label "Episode N"
+              // yang terpusat tidak pernah menimpa deskripsi.
+              bottomPadding: 220,
             ),
           ),
+          // Rel di band bebas antara tab atas dan caption bawah,
+          // dipusatkan vertikal — ikon pertama tidak terpotong atas.
           Positioned(
             right: 12,
-            bottom: 150,
-            child: ActionRail(
-              episode: episode,
-              onLike: _toggleLike,
-              onComment: _showComments,
-              onShare: () => _showPlaceholderSheet(
-                'Bagikan',
-                'Bagikan episode ini menyusul (UI saja).',
+            top: 24,
+            bottom: 230,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: ActionRail(
+                episode: episode,
+                onLike: _toggleLike,
+                onComment: _showComments,
+                onShare: () => _showPlaceholderSheet(
+                  'Bagikan',
+                  'Bagikan episode ini menyusul (UI saja).',
+                ),
+                onBookmark: _toggleBookmark,
               ),
-              onBookmark: _toggleBookmark,
             ),
           ),
           Positioned(
@@ -248,8 +264,7 @@ class _ReelCardState extends State<ReelCard> {
             bottom: 16,
             child: CaptionBlock(
               episode: episode,
-              isPlaying: _isPlaying,
-              onPlayPause: _togglePlay,
+              onWatch: () => _openPlayer(episode.id),
               onShowEpisodes: _showEpisodeList,
             ),
           ),

@@ -49,15 +49,10 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         _localUnlocked.contains(episode.id) ||
         wallet.vip.isActive;
     if (unlocked) {
-      context.read<WalletBloc>().add(
-            WalletContinueSaved(
-              episodeId: episode.id,
-              title: episode.title,
-              number: episode.number,
-            ),
-          );
-      widget.onOpenEpisode('ep${episode.number}');
+      // Pop DULU lalu buka player (bukan sebaliknya, supaya pop tidak
+      // menutup player yang baru dibuka). Player yang mencatat riwayat.
       Navigator.of(context).pop();
+      widget.onOpenEpisode('ep${episode.number}');
       return;
     }
     final session = context.read<SessionCubit>().state;
