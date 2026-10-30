@@ -717,30 +717,314 @@ class _PlayerPageState extends State<PlayerPage> {
   /// Bottom sheet daftar episode — HANYA episode series yang sedang
   /// diputar (dari detail API, sudah dedupe + urut). Tidak pernah
   /// mencampur series lain, tidak pernah dari feed global.
-  void _showEpisodeList(List<SeriesEpisode> seriesEpisodes, int seriesId) {
+  /// Id episode yang sudah ditonton pengguna di series ini (dari
+  /// WatchProgress API yang nyata: entri dengan posisi > 0 atau
+  /// sudah selesai). Belum masuk / gagal muat → himpunan kosong
+  /// (tanpa ceklis, bukan karangan). Riwayat hanya mempercantik
+  /// tile; daftar episode tetap jalan tanpanya.
+  Future<Set<int>> _watchedEpisodeIds(int seriesId) async {
+    try {
+      final history = await context.read<WalletRepository>().getHistory();
+      return <int>{
+        for (final entry in history)
+          if (entry.seriesId == seriesId &&
+              (entry.positionSeconds > 0 || entry.finished))
+            entry.episodeId,
+      };
+    } on Exception {
+      return <int>{};
+    }
+  }
+
+  /// Daftar Episode pola referensi (bukan list baris): bottom sheet
+  /// dengan gagang tarik + header series + grid 5 kolom tile nomor.
+  /// Hanya episode series aktif (filter seriesId + dedupe id + urut
+  /// nomor — tidak pernah tercampur series lain). Tile: nomor polos
+  /// (belum ditonton), ceklis hijau (sudah ditonton, dari API),
+  /// sorotan oranye (sedang diputar, bukan ceklis), gembok
+  /// (terkunci → dialog buka kunci, tidak pernah memutar). Tab
+  /// rentang 30 episode hanya bila > 30 episode.
+  void _showEpisodeList(
+    List<SeriesEpisode> seriesEpisodes,
+    int seriesId, {
+    Series? series,
+  }) {
+    // Kunci lingkup di sini juga (bukan hanya di pemanggil): filter
+    // series aktif + dedupe per id + urut per nomor.
+    final seen = <int>{};
+    final scoped = <SeriesEpisode>[];
+    for (final item in seriesEpisodes) {
+      if (item.seriesId != seriesId || !seen.add(item.id)) {
+        continue;
+      }
+      scoped.add(item);
+    }
+    scoped.sort((a, b) => a.number.compareTo(b.number));
+    final watchedFuture = _watchedEpisodeIds(seriesId);
+    final total = series != null && series.totalEpisode > 0
+        ? series.totalEpisode
+        : scoped.length;
+    // Status series yang NYATA: "Selesai" HANYA bila backend
+    // benar-benar mengirim status selesai; status lain yang dikenal
+    // ("ongoing") → "Berlanjut"; status lain (mis. "published" yang
+    // dipakai sekarang) → tanpa klaim status, hanya total episode.
+    final statusText = series == null
+        ? ''
+        : series.status == 'completed'
+            ? 'Selesai'
+            : series.status == 'ongoing'
+                ? 'Berlanjut'
+                : '';
+    final statusLine = statusText.isEmpty
+        ? 'Total $total episode'
+        : '$statusText · Total $total episode';
+    final seriesCover = series == null
+        ? ''
+        : resolveMediaUrl(series.coverUrl);
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (sheetContext) {
-        return ListView(
-          shrinkWrap: true,
-          children: seriesEpisodes.map((detail) {
-            final locked = detail.locked;
-            return ListTile(
-              leading: locked
-                  ? const Icon(Icons.lock, size: 20)
-                  : CircleAvatar(child: Text('${detail.number}')),
-              title: Text('Episode ${detail.number} - ${detail.title}'),
-              subtitle:
-                  locked ? Text('${detail.coinPrice} koin') : null,
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _switchTo('s$seriesId' 'e${detail.id}');
+        // Potongan 30 episode ("1-30", "31-60", ...); ≤ 30 episode
+        // langsung grid tanpa tab.
+        final chunks = <List<SeriesEpisode>>[];
+        for (var i = 0; i < scoped.length; i += 30) {
+          chunks.add(
+            scoped.sublist(i, (i + 30).clamp(0, scoped.length)),
+          );
+        }
+        return StatefulBuilder(
+          builder: (sheetContext, setTabState) {
+            var tabIndex = 0;
+            tabIndex = tabIndex.clamp(0, chunks.length - 1);
+            final shown = chunks.isEmpty ? scoped : chunks[tabIndex];
+                return SizedBox(
+                  height:
+                      MediaQuery.of(sheetContext).size.height * 0.85,
+                  child: Column(
+                    children: <Widget>[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            if (seriesCover.isNotEmpty)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  seriesCover,
+                                  width: 56,
+                                  height: 56,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) =>
+                                          Container(
+                                    width: 56,
+                                    height: 56,
+                                    color: Colors.white10,
+                                    child: const Icon(
+                                      Icons.movie,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.movie,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  InkWell(
+                                    onTap: () {
+                                      Navigator.of(sheetContext).pop();
+                                      _openSeriesDetail();
+                                    },
+                                    child: Text(
+                                      series == null
+                                          ? 'Series >'
+                                          : '${series.title} >',
+                                      style: Theme.of(sheetContext)
+                                          .textTheme
+                                          .titleMedium,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    statusLine,
+                                    style: Theme.of(sheetContext)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (chunks.length > 1) ...<Widget>[
+                        const SizedBox(height: 12),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              for (var i = 0; i < chunks.length; i++)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(
+                                      '${chunks[i].first.number}-'
+                                      '${chunks[i].last.number}',
+                                    ),
+                                    selected: i == tabIndex,
+                                    onSelected: (_) =>
+                                        setTabState(() => tabIndex = i),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: FutureBuilder<Set<int>>(
+                          future: watchedFuture,
+                          initialData: const <int>{},
+                          builder: (context, snapshot) {
+                            final watched = snapshot.data ?? <int>{};
+                            return GridView.count(
+                              crossAxisCount: 5,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                16,
+                              ),
+                              children: shown.map((detail) {
+                                final isCurrent =
+                                    's$seriesId' 'e${detail.id}' ==
+                                        _currentId;
+                                final isWatched =
+                                    watched.contains(detail.id);
+                                final locked = detail.locked;
+                                return Tooltip(
+                                  message: 'Episode ${detail.number}',
+                                  child: InkWell(
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                    onTap: () {
+                                      Navigator.of(sheetContext).pop();
+                                      _switchTo(
+                                        's$seriesId' 'e${detail.id}',
+                                      );
+                                    },
+                                    child: Stack(
+                                      children: <Widget>[
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            // Sedang diputar =
+                                            // sorotan oranye (bukan
+                                            // ceklis, walau sudah
+                                            // ditonton).
+                                            color: isCurrent
+                                                ? AppColors.accent
+                                                : Colors.white10,
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color: isCurrent
+                                                  ? AppColors.accent
+                                                  : Colors.white24,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              '${detail.number}',
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? Colors.white
+                                                    : Colors.white,
+                                                fontWeight: isCurrent
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        // Terkunci = gembok (tap →
+                                        // alur buka kunci lewat
+                                        // _switchTo, tidak memutar).
+                                        // Sudah ditonton (bukan yang
+                                        // sedang diputar) = ceklis.
+                                        if (locked)
+                                          const Positioned(
+                                            top: 4,
+                                            right: 4,
+                                            child: Icon(
+                                              Icons.lock,
+                                              size: 14,
+                                              color: Colors.white70,
+                                            ),
+                                          )
+                                        else if (isWatched)
+                                          const Positioned(
+                                            top: 4,
+                                            right: 4,
+                                            child: Icon(
+                                              Icons.check_circle,
+                                              size: 14,
+                                              color: Colors.green,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               },
             );
-          }).toList(),
+          },
         );
-      },
-    );
   }
 
   /// Alur kunci — sama persis dengan detail series: belum masuk → dialog
@@ -904,8 +1188,9 @@ class _PlayerPageState extends State<PlayerPage> {
   Widget _headerRow(
     Episode episode,
     List<SeriesEpisode> seriesEpisodes,
-    int seriesId,
-  ) {
+    int seriesId, {
+    Series? series,
+  }) {
     // Geometri referensi: "Ep. N" di KIRI tepat setelah tombol
     // kembali (bukan tengah), "..." di kanan.
     return Row(
@@ -926,7 +1211,11 @@ class _PlayerPageState extends State<PlayerPage> {
           onSelected: (value) {
             _resetHideTimer();
             if (value == 'episodes') {
-              _showEpisodeList(seriesEpisodes, seriesId);
+              _showEpisodeList(
+                seriesEpisodes,
+                seriesId,
+                series: series,
+              );
             } else if (value == 'detail') {
               _openSeriesDetail();
             }
@@ -947,13 +1236,95 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
+  /// Empat aksi rel (Suka/Komentar/Simpan/Bagikan), urutan sama
+  /// dengan referensi. Dipakai dua tempat: rel di dalam video
+  /// (portrait) dan rel panel bawah (landscape, posisi referensi).
+  /// Ikon saja, tanpa subteks (API tidak menyediakan angka nyata).
+  List<Widget> _railActions(
+    Episode episode, {
+    double iconSize = 28,
+    double touchSize = 36,
+  }) {
+    return <Widget>[
+      _PlayerAction(
+        icon: episode.isLiked ? Icons.favorite : Icons.favorite_border,
+        tooltip: 'Suka',
+        active: episode.isLiked,
+        iconSize: iconSize,
+        touchSize: touchSize,
+        onPressed: () {
+          _resetHideTimer();
+          _toggleLike(episode);
+        },
+      ),
+      _PlayerAction(
+        icon: Icons.chat_bubble_outline,
+        tooltip: 'Komentar',
+        iconSize: iconSize,
+        touchSize: touchSize,
+        onPressed: () {
+          _resetHideTimer();
+          _showComments(episode);
+        },
+      ),
+      _PlayerAction(
+        icon: episode.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+        tooltip: 'Simpan',
+        active: episode.isBookmarked,
+        iconSize: iconSize,
+        touchSize: touchSize,
+        onPressed: () {
+          _resetHideTimer();
+          _toggleBookmark(episode);
+        },
+      ),
+      _PlayerAction(
+        icon: Icons.share,
+        tooltip: 'Bagikan',
+        iconSize: iconSize,
+        touchSize: touchSize,
+        onPressed: () {
+          _resetHideTimer();
+          _showShareSheet();
+        },
+      ),
+    ];
+  }
+
+  /// Kolom rel dari aksi + tiga gap antar ikon (gap[0] = Suka→
+  /// Komentar, gap[1] = Komentar→Simpan, gap[2] = Simpan→Bagikan).
+  Widget _railColumn(
+    Episode episode,
+    List<double> gaps, {
+    double iconSize = 28,
+    double touchSize = 36,
+  }) {
+    final actions = _railActions(
+      episode,
+      iconSize: iconSize,
+      touchSize: touchSize,
+    );
+    final children = <Widget>[];
+    for (var i = 0; i < actions.length; i++) {
+      if (i > 0) {
+        children.add(SizedBox(height: gaps[i - 1]));
+      }
+      children.add(actions[i]);
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+  }
+
   Widget _videoArea(
     SeriesEpisode? lockedDetail,
     SeriesEpisode? detail,
     bool detailLoading,
     String coverUrl,
-    Episode episode,
-  ) {
+    Episode episode, {
+    bool railInVideo = true,
+  }) {
     // ATURAN KEJUJURAN STATE (cacat kelas terburuk: ikon "memutar" tanpa
     // video jalan): area video TIDAK PERNAH menampilkan gradasi statis
     // berikon putar sebagai "sedang memutar".
@@ -1057,16 +1428,17 @@ class _PlayerPageState extends State<PlayerPage> {
         onPlayingChanged: _onPlayingChanged,
       );
     }
-    // Rel di DALAM area video, tengah vertikal (keluhan uwa:
-    // rel di bawah video terlalu renggang + ikon terpotong tepi
-    // bawah). Jarak antar ikon RAPAT dan konsisten (12px), tiap item
-    // ikon saja (tanpa subteks — API tidak menyediakan angka nyata,
-    // dan label kata panjang dilarang). Total tinggi rel (~174px)
-    // proporsional dengan tinggi video 16:9 dan selalu muat penuh
-    // karena terpusat di dalam kotak video, bukan menempel ke bawah
-    // layar. Di PLAY fokus / fullscreen, rel hilang bersama chrome.
-    final railVisible =
-        lockedDetail == null && _chromeVisible && !_fullscreen;
+    // Rel di DALAM area video, tengah vertikal — HANYA untuk video
+    // portrait (pola reels: rel menempel video). Video landscape
+    // memakai rel di panel bawah (posisi referensi, lihat cabang
+    // landscape di build) — jadi relInVideo=false mematikan rel ini.
+    // Tiap item ikon saja (tanpa subteks — API tidak menyediakan
+    // angka nyata, dan label kata panjang dilarang). Di PLAY fokus /
+    // fullscreen, rel hilang bersama chrome.
+    final railVisible = lockedDetail == null &&
+        _chromeVisible &&
+        !_fullscreen &&
+        railInVideo;
     final currentCue = detail != null && lockedDetail == null
         ? cueAt(_subtitleCues, _videoPosition)
         : null;
@@ -1092,51 +1464,9 @@ class _PlayerPageState extends State<PlayerPage> {
                   height: railConstraints.maxHeight,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                  _PlayerAction(
-                    icon: episode.isLiked
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    tooltip: 'Suka',
-                    active: episode.isLiked,
-                    onPressed: () {
-                      _resetHideTimer();
-                      _toggleLike(episode);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _PlayerAction(
-                    icon: Icons.chat_bubble_outline,
-                    tooltip: 'Komentar',
-                    onPressed: () {
-                      _resetHideTimer();
-                      _showComments(episode);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _PlayerAction(
-                    icon: episode.isBookmarked
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                    tooltip: 'Simpan',
-                    active: episode.isBookmarked,
-                    onPressed: () {
-                      _resetHideTimer();
-                      _toggleBookmark(episode);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _PlayerAction(
-                    icon: Icons.share,
-                    tooltip: 'Bagikan',
-                    onPressed: () {
-                      _resetHideTimer();
-                      _showShareSheet();
-                    },
-                  ),
-                      ],
+                    child: _railColumn(
+                      episode,
+                      const <double>[12, 12, 12],
                     ),
                   ),
                 );
@@ -1254,8 +1584,10 @@ class _PlayerPageState extends State<PlayerPage> {
     int seriesId,
     SeriesEpisode? detail,
     String? seriesTitle,
-    int freeEpisodeCount,
-  ) {
+    int freeEpisodeCount, {
+    Series? series,
+    double infoRightPadding = 16,
+  }) {
     // Tombol Putar hanya bermakna bila ada video yang bisa diputar.
     final canPlay = !locked &&
         detail != null &&
@@ -1346,7 +1678,11 @@ class _PlayerPageState extends State<PlayerPage> {
       // mode fokus (di sini ia selalu dibangun di PAUSE normal).
       if (seriesEpisodes.isNotEmpty)
         InkWell(
-          onTap: () => _showEpisodeList(seriesEpisodes, seriesId),
+          onTap: () => _showEpisodeList(
+              seriesEpisodes,
+              seriesId,
+              series: series,
+            ),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -1370,7 +1706,7 @@ class _PlayerPageState extends State<PlayerPage> {
     // pendek (16:9 lama) ikut aman — konten meluber = bisa di-scroll,
     // bukan error overflow merah.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: EdgeInsets.fromLTRB(16, 0, infoRightPadding, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: content,
@@ -1586,6 +1922,10 @@ class _PlayerPageState extends State<PlayerPage> {
                   }
                 }
                 final chromeVisible = _chromeVisible && !_fullscreen;
+                // Rel di dalam video HANYA untuk portrait (pola
+                // reels). Landscape memakai rel panel bawah di
+                // posisi referensi (dibangun di cabang landscape).
+                final railInVideo = _videoAspectRatio < 1.0;
                 final videoWidget = _videoArea(
                   lockedDetail,
                   detail,
@@ -1593,6 +1933,7 @@ class _PlayerPageState extends State<PlayerPage> {
                       detailState.errorMessage == null,
                   detailState.detail?.series.coverUrl ?? '',
                   episode,
+                  railInVideo: railInVideo,
                 );
                 // Overlay status akhir series (episode terakhir
                 // selesai): bukan ulang diam-diam, bukan loading.
@@ -1628,6 +1969,7 @@ class _PlayerPageState extends State<PlayerPage> {
                                     onPressed: () => _showEpisodeList(
                                       seriesEpisodes,
                                       _seriesId,
+                                      series: series,
                                     ),
                                     child: const Text('Daftar Episode'),
                                   ),
@@ -1703,60 +2045,79 @@ class _PlayerPageState extends State<PlayerPage> {
                           seriesTitle,
                           detailState.detail?.series.freeEpisodeCount ??
                               0,
+                          series: series,
+                          // Landscape: teks tidak boleh lari ke bawah
+                          // rel panel bawah (zona rel ~66px + napas).
+                          infoRightPadding: railInVideo ? 16 : 76,
                         );
                         if (aspect < 1.0) {
                           // PORTRAIT (reels): video natural penuh
                           // lebar (9:16 di layar 390px = 693px
-                          // tinggi). Seluruh badan PAUSE bisa
-                          // di-scroll: chrome mengalir di bawah video
+                          // tinggi). Chrome mengalir di bawah video
                           // (pil, judul, progress) — semua ter-render
                           // penuh, tidak ada yang terpotong atau
-                          // terjepit; yang bergeser hanya posisi
-                          // scroll, bukan kotak video. Tanpa Expanded
-                          // di dalam scroll (tinggi tak terbatas).
-                          // AnimatedSize: perubahan ukuran sekali
-                          // saat init selesai berjalan halus (300ms),
-                          // bukan lompatan + tanpa frame kosong
-                          // (poster tetap tampil selama transisi).
-                          return SingleChildScrollView(
-                            child: Column(
-                              children: <Widget>[
-                                SizedBox(height: availH * 0.02),
-                                _headerRow(
-                                  episode,
-                                  seriesEpisodes,
-                                  _seriesId,
+                          // terjepit. AnimatedSize: perubahan ukuran
+                          // sekali saat init selesai berjalan halus
+                          // (300ms), bukan lompatan + tanpa frame
+                          // kosong (poster tetap tampil selama
+                          // transisi).
+                          // Panel bawah MENTOK BAWAH (perintah uwa:
+                          // tidak ada ruang kosong di bawah baris
+                          // Total): SliverFillRemaining memberi blok
+                          // info sisa tinggi viewport dan info
+                          // menempel ke bawahnya; bila konten sudah
+                          // melebihi viewport, sliver membesar
+                          // mengikuti info (badan tetap bisa scroll).
+                          return CustomScrollView(
+                            slivers: <Widget>[
+                              SliverToBoxAdapter(
+                                child: Column(
+                                  children: <Widget>[
+                                    SizedBox(height: availH * 0.02),
+                                    _headerRow(
+                                      episode,
+                                      seriesEpisodes,
+                                      _seriesId,
+                                      series: series,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    AnimatedSize(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      curve: Curves.easeInOut,
+                                      child: SizedBox(
+                                        width: availW,
+                                        height: availW / aspect,
+                                        child: videoWithEnd,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _fullscreenPill(),
+                                    const SizedBox(height: 16),
+                                  ],
                                 ),
-                                const SizedBox(height: 12),
-                                AnimatedSize(
-                                  duration:
-                                      const Duration(milliseconds: 300),
-                                  curve: Curves.easeInOut,
-                                  child: SizedBox(
-                                    width: availW,
-                                    height: availW / aspect,
-                                    child: videoWithEnd,
-                                  ),
+                              ),
+                              SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.end,
+                                  children: <Widget>[info],
                                 ),
-                                const SizedBox(height: 12),
-                                _fullscreenPill(),
-                                const SizedBox(height: 16),
-                                info,
-                              ],
-                            ),
+                              ),
+                            ],
                           );
                         }
                         // LANDSCAPE (16:9 dst.): geometri referensi
                         // (persen tinggi layar, diukur dari tangkapan
-                        // 614x1280) + anti-potong 0.2.11: pil anak
-                        // tetap Column, video mengecil bila sempit,
-                        // info yang scroll — bukan pil yang dikorban.
+                        // 614x1280) + anti-potong: pil anak tetap
+                        // Column, bukan di dalam Stack/scroll.
                         // Cadangan tinggi tetap (header 48 + slack,
                         // pil 44 + slack — skala font besar ikut aman).
                         const headerReserve = 56.0;
                         const pillReserve = 48.0;
                         const infoMin = 120.0;
-                        const railMinVideo = 180.0;
                         var gapTop = availH * 0.05;
                         var gapMid = availH * 0.197;
                         var gapPillTop = availH * 0.02;
@@ -1767,38 +2128,55 @@ class _PlayerPageState extends State<PlayerPage> {
                             gapPillTop +
                             pillReserve +
                             gapPillBottom;
-                        var videoH = availH - fixedSum() - infoMin;
-                        // Kaskade penghematan bila video terlalu pendek
-                        // untuk rel (rel butuh 180px): kecilkan gap
-                        // tengah dulu, lalu gap pil→judul, lalu gap
-                        // atas — pil dan video tidak dikorbankan.
-                        if (videoH < railMinVideo) {
-                          final deficit = railMinVideo - videoH;
+                        // Kaskade penghematan bila layar pendek:
+                        // kecilkan gap tengah dulu, lalu gap pil→
+                        // judul, lalu gap atas — pil dan blok info
+                        // tidak dikorbankan.
+                        if (fixedSum() + infoMin > availH) {
+                          final deficit = fixedSum() + infoMin - availH;
                           final cutMid =
                               deficit < gapMid ? deficit : gapMid;
                           gapMid -= cutMid;
-                          videoH = availH - fixedSum() - infoMin;
                         }
-                        if (videoH < railMinVideo) {
-                          final deficit = railMinVideo - videoH;
+                        if (fixedSum() + infoMin > availH) {
+                          final deficit = fixedSum() + infoMin - availH;
                           final cutBottom = deficit < gapPillBottom
                               ? deficit
                               : gapPillBottom;
                           gapPillBottom -= cutBottom;
-                          videoH = availH - fixedSum() - infoMin;
                         }
-                        if (videoH < railMinVideo) {
-                          final deficit = railMinVideo - videoH;
+                        if (fixedSum() + infoMin > availH) {
+                          final deficit = fixedSum() + infoMin - availH;
                           final cutTop =
                               deficit < gapTop ? deficit : gapTop;
                           gapTop -= cutTop;
-                          videoH = availH - fixedSum() - infoMin;
                         }
-                        // Batas akhir: video selebar layar penuh bila
-                        // muat (tinggi = lebar / rasio asli), mengecil
-                        // bila sempit, tidak pernah negatif (sisa
-                        // untuk info selalu >= 0 via Expanded).
-                        videoH = videoH.clamp(0.0, availW / aspect);
+                        // REL POSISI REFERENSI (perintah uwa: samain
+                        // referensi, jangan karangan — diukur dari
+                        // tangkapan 614x1280, pusat ikon x ~90,3%):
+                        // margin kanan 5,6% lebar layar; ikon pertama
+                        // (Suka) sejajar tengah pil (item 44px vs
+                        // pil ~42px → pusat sama dalam 1px); jarak
+                        // pusat-ke-pusat antar ikon mengikuti
+                        // referensi (Suka 63,0% → Komentar 72,8% →
+                        // Simpan 80,4% → Bagikan 87,6% tinggi layar).
+                        // Rel TIDAK direntangkan (bukan spaceBetween/
+                        // spaceEvenly) dan TIDAK menempel atas/bawah:
+                        // ia kolom rapat di samping blok judul/
+                        // deskripsi. FittedBox scaleDown mengecilkan
+                        // proporsional bila panel bawah lebih pendek
+                        // (tidak pernah terpotong tepi).
+                        final railMargin = availW * 0.056;
+                        double railGap(double pitch) {
+                          final gap = pitch - 44;
+                          return gap < 0 ? 0 : gap;
+                        }
+
+                        final railGaps = <double>[
+                          railGap(availH * 0.098),
+                          railGap(availH * 0.076),
+                          railGap(availH * 0.072),
+                        ];
                         return Column(
                           children: <Widget>[
                             SizedBox(height: gapTop),
@@ -1806,29 +2184,74 @@ class _PlayerPageState extends State<PlayerPage> {
                               episode,
                               seriesEpisodes,
                               _seriesId,
+                              series: series,
                             ),
                             SizedBox(height: gapMid),
-                            AnimatedSize(
-                              duration:
-                                  const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                              child: SizedBox(
-                                width: availW,
-                                height: videoH,
-                                child: videoWithEnd,
+                            // AREA VIDEO MENYERAP SISA RUANG (perintah
+                            // uwa: "gak usah ada space, langsung aja
+                            // ke bawah mentokan"): Expanded + Center
+                            // + AspectRatio rasio asli — video di
+                            // tengah areanya, mengikuti rasio, tanpa
+                            // kotak tetap; ruang kosong TIDAK jatuh
+                            // di bawah baris Total.
+                            Expanded(
+                              child: Center(
+                                child: AspectRatio(
+                                  aspectRatio: aspect,
+                                  child: videoWithEnd,
+                                ),
                               ),
                             ),
-                            // Pil SELALU penuh: anak tetap Column di
-                            // antara video dan info, margin jelas di
-                            // kedua sisi, tidak di dalam Stack/scroll.
                             SizedBox(height: gapPillTop),
-                            _fullscreenPill(),
-                            SizedBox(height: gapPillBottom),
-                            // Hanya blok info yang boleh scroll bila
-                            // sempit — pil di atasnya tidak ikut geser.
-                            Expanded(
-                              child: SingleChildScrollView(
-                                child: info,
+                            // Panel bawah: pil + info + rel referensi.
+                            // Stack selebar layar (agar rel di tepi
+                            // kanan LAYAR, bukan tepi kolom info);
+                            // kolom dalam stretch (agar baris
+                            // deskripsi ber-Expanded dapat lebar penuh).
+                            SizedBox(
+                              width: availW,
+                              child: Stack(
+                                children: <Widget>[
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: <Widget>[
+                                      // Pil SELALU penuh: anak tetap
+                                      // Column, margin jelas di kedua
+                                      // sisi, tidak di dalam scroll.
+                                      _fullscreenPill(),
+                                      SizedBox(height: gapPillBottom),
+                                      // Info = elemen terakhir, tinggi
+                                      // = konten (shrinkWrap, bukan
+                                      // viewport) → baris Total mentok
+                                      // bawah dengan padding kecil
+                                      // saja; bila konten melebihi
+                                      // sisa ruang, ia scroll.
+                                      SingleChildScrollView(
+                                        shrinkWrap: true,
+                                        child: info,
+                                      ),
+                                    ],
+                                  ),
+                                  if (lockedDetail == null &&
+                                      _chromeVisible &&
+                                      !_fullscreen)
+                                    Positioned(
+                                      right: railMargin,
+                                      top: 0,
+                                      bottom: 0,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.topCenter,
+                                        child: _railColumn(
+                                          episode,
+                                          railGaps,
+                                          iconSize: 32,
+                                          touchSize: 44,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ],
@@ -1942,6 +2365,8 @@ class _PlayerAction extends StatelessWidget {
     required this.tooltip,
     required this.onPressed,
     this.active = false,
+    this.iconSize = 28,
+    this.touchSize = 36,
   });
 
   final IconData icon;
@@ -1949,24 +2374,27 @@ class _PlayerAction extends StatelessWidget {
   final VoidCallback onPressed;
   final bool active;
 
+  /// Ukuran glyph ikon (default 28 = rel portrait di dalam video).
+  final double iconSize;
+
+  /// Target sentuh (default 36). Rel landscape referensi memakai
+  /// 44/32 (glyph referensi ~50px pada lebar 614 = 8,1% lebar).
+  final double touchSize;
+
   @override
   Widget build(BuildContext context) {
-    // Tombol ringkas 36px (ikon 28 + padding 2): total rel 4×36 +
-    // 3×12 = 174px — muat penuh di dalam tinggi video 16:9 (203px
-    // pada lebar 360) tanpa terpotong, dengan jarak antar ikon rapat
-    // dan konsisten (12px, bukan renggang).
     return Tooltip(
       message: tooltip,
       child: IconButton(
         onPressed: onPressed,
         padding: const EdgeInsets.all(2),
-        constraints: const BoxConstraints(
-          minWidth: 36,
-          minHeight: 36,
+        constraints: BoxConstraints(
+          minWidth: touchSize,
+          minHeight: touchSize,
         ),
         icon: Icon(
           icon,
-          size: 28,
+          size: iconSize,
           color: active ? AppColors.accent : Colors.white,
         ),
       ),
