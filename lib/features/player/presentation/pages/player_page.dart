@@ -63,6 +63,14 @@ class _PlayerPageState extends State<PlayerPage> {
   /// Durasi video aktif (dari controller, untuk Slider progress).
   Duration _videoDuration = Duration.zero;
 
+  /// Rasio video aktif (lebar / tinggi, dari controller setelah init).
+  /// Sebelum init = 9/16 (default reels): cover tampil besar vertikal,
+  /// bukan strip kecil. Sesudah init = rasio asli file (portrait
+  /// 9:16 tetap besar penuh lebar; landscape 16:9 lebar penuh).
+  /// Di-reset tiap pindah episode agar episode baru tidak mewarisi
+  /// kotak episode lama.
+  double _videoAspectRatio = 9 / 16;
+
   /// Episode TERAKHIR series sudah selesai diputar (bukan mengulang
   /// diam-diam, bukan loading tanpa akhir): overlay status akhir.
   bool _ended = false;
@@ -301,6 +309,22 @@ class _PlayerPageState extends State<PlayerPage> {
     }
   }
 
+  /// Rasio video dari controller (dipanggil area video sekali setelah
+  /// init sukses / klaim prewarm). Ditunda ke post-frame karena area
+  /// bisa melaporkannya dari dalam initState-nya (setState saat build
+  /// induk berjalan = error Flutter). Nilai tidak waras diabaikan;
+  /// nilai sama tidak memicu rebuild (hindari loop layout).
+  void _onVideoAspectRatio(double aspect) {
+    if (aspect <= 0.1 || aspect > 10) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && (_videoAspectRatio - aspect).abs() > 0.001) {
+        setState(() => _videoAspectRatio = aspect);
+      }
+    });
+  }
+
   /// Id `s{seriesId}e{episodeId}` → seriesId; `epN` lama → 1.
   int? _parseSeriesId(String id) {
     final RegExpMatch? match = RegExp(r'^s(\d+)e\d+$').firstMatch(id);
@@ -414,6 +438,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _chromeVisible = true;
       _videoPosition = Duration.zero;
       _videoDuration = Duration.zero;
+      _videoAspectRatio = 9 / 16;
       _descriptionExpanded = false;
       _ended = false;
     });
@@ -784,6 +809,7 @@ class _PlayerPageState extends State<PlayerPage> {
         showControls: _fullscreen,
         onPositionChanged: _onVideoPosition,
         onDurationChanged: _onVideoDuration,
+        onAspectRatioChanged: _onVideoAspectRatio,
         onVideoEnded: _onVideoEnded,
         seekRequest: _seekRequest,
         // Prefetch HANYA bila URL-nya memang episode ini (bila tidak
@@ -1400,34 +1426,100 @@ class _PlayerPageState extends State<PlayerPage> {
                     ),
                   );
                 }
-                // PAUSE = GEOMETRI REFERENSI (persen tinggi layar,
-                // diukur dari tangkapan 614x1280):
-                // - header tengah ~11%: spacer 5% + baris header.
-                // - video 16:9 full-width, atas ~33,4%, tinggi ~27%.
-                // - pil Layar Penuh tengah, atas ~62,5% (gap 2%).
-                // - rel ikon kanan di DALAM video, tengah vertikal.
-                // - judul ~81,7%, deskripsi ~89,3%, progress ~93%,
-                //   baris Total ~94,1%.
+                // PAUSE = KOTAK VIDEO MENGIKUTI RASIO ASLI (dracin
+                // itu reels): rasio dari controller setelah init
+                // (default 9:16 sebelum init) — portrait tampil BESAR
+                // penuh lebar (bukan strip kecil di kotak 16:9),
+                // landscape lebar penuh; tanpa distorsi, tanpa bar
+                // ganda (kotak luar dan AspectRatio dalam sama).
+                // - LANDSCAPE: geometri referensi (persen tinggi
+                //   layar, tangkapan 614x1280): header ~11%, video
+                //   atas ~33,4% tinggi ~27%, pil tengah gap 2%,
+                //   rel ikon di DALAM video tengah vertikal, judul
+                //   ~81,7%, progress ~93%, Total ~94,1%.
+                // - PORTRAIT: badan PAUSE bisa di-scroll (video
+                //   natural + chrome mengalir di bawahnya).
                 //
                 // ANTI-POTONG (keluhan 12:53: pil terpotong setengah +
                 // ikon share keluar layar): pil adalah anak Column
                 // BIASA dengan tinggi tetap + margin jelas — bukan di
                 // dalam Stack, bukan di dalam scroll view — sehingga
                 // tidak mungkin tertumpuk/terpotong panel mana pun.
-                // Bila ruang sempit, yang mengecil adalah VIDEO
-                // (tinggi dihitung dari sisa ruang, dibatasi 16:9) dan
-                // yang menggeser adalah GAP (kaskade: gap tengah, lalu
-                // gap pil→judul, lalu gap atas) — pil TIDAK PERNAH
-                // dikorbankan. Blok info di bawah pil adalah
-                // Expanded + scroll, sehingga ia yang meluap (scroll),
-                // bukan pil. Total anak tetap + video tidak pernah
-                // melebihi tinggi SafeArea → tidak ada overflow.
+                // Bila ruang sempit (landscape), yang mengecil adalah
+                // VIDEO (tinggi dihitung dari sisa ruang, dibatasi
+                // lebar/rasio) dan yang menggeser adalah GAP (kaskade:
+                // gap tengah, lalu gap pil→judul, lalu gap atas) — pil
+                // TIDAK PERNAH dikorbankan. Blok info di bawah pil
+                // adalah Expanded + scroll, sehingga ia yang meluap
+                // (scroll), bukan pil.
                 return Scaffold(
                   body: SafeArea(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final availH = constraints.maxHeight;
                         final availW = constraints.maxWidth;
+                        // Rasio video dari controller (default 9/16
+                        // sebelum init). Kotak video MENGIKUTI rasio
+                        // ini — bukan kotak tetap: portrait tampil
+                        // besar penuh lebar, landscape lebar penuh.
+                        final aspect = _videoAspectRatio;
+                        final info = _infoSection(
+                          episode,
+                          locked,
+                          seriesEpisodes,
+                          _seriesId,
+                          detail,
+                          seriesTitle,
+                          detailState.detail?.series.freeEpisodeCount ??
+                              0,
+                        );
+                        if (aspect < 1.0) {
+                          // PORTRAIT (reels): video natural penuh
+                          // lebar (9:16 di layar 390px = 693px
+                          // tinggi). Seluruh badan PAUSE bisa
+                          // di-scroll: chrome mengalir di bawah video
+                          // (pil, judul, progress) — semua ter-render
+                          // penuh, tidak ada yang terpotong atau
+                          // terjepit; yang bergeser hanya posisi
+                          // scroll, bukan kotak video. Tanpa Expanded
+                          // di dalam scroll (tinggi tak terbatas).
+                          // AnimatedSize: perubahan ukuran sekali
+                          // saat init selesai berjalan halus (300ms),
+                          // bukan lompatan + tanpa frame kosong
+                          // (poster tetap tampil selama transisi).
+                          return SingleChildScrollView(
+                            child: Column(
+                              children: <Widget>[
+                                SizedBox(height: availH * 0.02),
+                                _headerRow(
+                                  episode,
+                                  seriesEpisodes,
+                                  _seriesId,
+                                ),
+                                const SizedBox(height: 12),
+                                AnimatedSize(
+                                  duration:
+                                      const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                  child: SizedBox(
+                                    width: availW,
+                                    height: availW / aspect,
+                                    child: videoWithEnd,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _fullscreenPill(),
+                                const SizedBox(height: 16),
+                                info,
+                              ],
+                            ),
+                          );
+                        }
+                        // LANDSCAPE (16:9 dst.): geometri referensi
+                        // (persen tinggi layar, diukur dari tangkapan
+                        // 614x1280) + anti-potong 0.2.11: pil anak
+                        // tetap Column, video mengecil bila sempit,
+                        // info yang scroll — bukan pil yang dikorban.
                         // Cadangan tinggi tetap (header 48 + slack,
                         // pil 44 + slack — skala font besar ikut aman).
                         const headerReserve = 56.0;
@@ -1471,10 +1563,11 @@ class _PlayerPageState extends State<PlayerPage> {
                           gapTop -= cutTop;
                           videoH = availH - fixedSum() - infoMin;
                         }
-                        // Batas akhir: video 16:9 penuh bila muat,
-                        // mengecil bila sempit, tidak pernah negatif
-                        // (sisa untuk info selalu >= 0 via Expanded).
-                        videoH = videoH.clamp(0.0, availW * 9 / 16);
+                        // Batas akhir: video selebar layar penuh bila
+                        // muat (tinggi = lebar / rasio asli), mengecil
+                        // bila sempit, tidak pernah negatif (sisa
+                        // untuk info selalu >= 0 via Expanded).
+                        videoH = videoH.clamp(0.0, availW / aspect);
                         return Column(
                           children: <Widget>[
                             SizedBox(height: gapTop),
@@ -1484,10 +1577,15 @@ class _PlayerPageState extends State<PlayerPage> {
                               _seriesId,
                             ),
                             SizedBox(height: gapMid),
-                            SizedBox(
-                              width: availW,
-                              height: videoH,
-                              child: videoWithEnd,
+                            AnimatedSize(
+                              duration:
+                                  const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              child: SizedBox(
+                                width: availW,
+                                height: videoH,
+                                child: videoWithEnd,
+                              ),
                             ),
                             // Pil SELALU penuh: anak tetap Column di
                             // antara video dan info, margin jelas di
@@ -1499,17 +1597,7 @@ class _PlayerPageState extends State<PlayerPage> {
                             // sempit — pil di atasnya tidak ikut geser.
                             Expanded(
                               child: SingleChildScrollView(
-                                child: _infoSection(
-                                  episode,
-                                  locked,
-                                  seriesEpisodes,
-                                  _seriesId,
-                                  detail,
-                                  seriesTitle,
-                                  detailState.detail?.series
-                                          .freeEpisodeCount ??
-                                      0,
-                                ),
+                                child: info,
                               ),
                             ),
                           ],

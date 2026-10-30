@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -128,14 +130,21 @@ class _ReelVideoState extends State<ReelVideo> {
       });
     }
     try {
-      await controller.initialize();
-    } on Exception catch (error) {
+      // Batas 90 detik seperti Player: preview yang stall tidak boleh
+      // jadi spinner tanpa akhir (tetap jadi error + Coba Lagi).
+      await controller.initialize().timeout(const Duration(seconds: 90));
+    } catch (error) {
+      // Ditangkap luas: kegagalan platform apa pun jadi error UI,
+      // bukan crash async yang membekukan kartu.
       if (!mounted || gen != _initGen || _controller != controller) {
         return;
       }
+      final message = error is TimeoutException
+          ? 'Memuat preview terlalu lama (melebihi 90 detik).'
+          : 'Gagal memutar preview: $error';
       setState(() {
         _initializing = false;
-        _error = 'Gagal memutar preview: $error';
+        _error = message;
       });
       return;
     }
@@ -144,6 +153,11 @@ class _ReelVideoState extends State<ReelVideo> {
     }
     // Suara menyala seperti TikTok (bukan preview bisu).
     await controller.setVolume(1.0);
+    // Await kedua: kartu bisa saja dibuang/digeser selama setVolume —
+    // periksa lagi sebelum setState (setState setelah dispose = error).
+    if (!mounted || gen != _initGen || _controller != controller) {
+      return;
+    }
     setState(() {
       _initializing = false;
     });

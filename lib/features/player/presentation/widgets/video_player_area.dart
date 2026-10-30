@@ -65,6 +65,7 @@ class VideoPlayerArea extends StatefulWidget {
     this.showControls = true,
     this.onPositionChanged,
     this.onDurationChanged,
+    this.onAspectRatioChanged,
     this.onVideoEnded,
     this.seekRequest,
     this.hlsUrl = '',
@@ -111,6 +112,12 @@ class VideoPlayerArea extends StatefulWidget {
   /// Durasi terbaru (dilaporkan saat detik berubah) — untuk Slider
   /// progress induk (posisi/durasi nyata dari controller).
   final ValueChanged<Duration>? onDurationChanged;
+
+  /// Rasio video (lebar / tinggi) dari controller, dilaporkan SEKALI
+  /// setelah init sukses / klaim prewarm — induk menyesuaikan ukuran
+  /// kotak video ke rasio asli (portrait tidak lagi jadi strip kecil
+  /// di dalam kotak 16:9). Null = induk tidak peduli (pratinjau form).
+  final ValueChanged<double>? onAspectRatioChanged;
 
   /// Dipanggil SEKALI saat video mencapai akhir (untuk auto-next
   /// induk; episode terakhir ditangani induk sebagai status akhir).
@@ -263,6 +270,11 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         _duration = controller.value.duration;
       });
     }
+    // Controller prefetch sudah init: rasionya langsung diketahui.
+    final aspect = controller.value.aspectRatio;
+    if (aspect > 0) {
+      widget.onAspectRatioChanged?.call(aspect);
+    }
     if (widget.playRequest.value) {
       controller.play();
     }
@@ -388,7 +400,10 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
       // download, tapi bila 90 detik belum ada frame pertama, itu
       // error yang harus terlihat + bisa di-retry — bukan spinner diam.
       await controller.initialize().timeout(const Duration(seconds: 90));
-    } on Exception catch (error) {
+    } catch (error) {
+      // Ditangkap luas (bukan hanya Exception): kegagalan init
+      // platform apa pun harus jadi error UI + Coba Lagi, bukan
+      // crash async yang membekukan halaman.
       // Init gagal (URL stub, tautan halaman web, jaringan, timeout):
       // error asli, bukan crash dan bukan placeholder gerak.
       if (!mounted || _controller != controller) {
@@ -418,6 +433,12 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     });
     _stopLoadingTimer();
     widget.onDurationChanged?.call(duration);
+    // Rasio asli file — induk menyesuaikan kotak video (portrait
+    // besar penuh lebar, landscape lebar penuh, tanpa bar ganda).
+    final aspect = controller.value.aspectRatio;
+    if (aspect > 0) {
+      widget.onAspectRatioChanged?.call(aspect);
+    }
     // Lanjut dari posisi terakhir (retry jaringan) bila masih valid.
     if (_positionUrl == _resolvedUrl &&
         _lastPosition > Duration.zero &&
