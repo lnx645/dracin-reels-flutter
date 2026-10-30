@@ -9,6 +9,10 @@
          "tidak dapat terhubung" meski server hidup dan cleartext sudah
          benar. Izin normal: otomatis dikabulkan, tanpa prompt. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Izin notifikasi (Android 13+ runtime): hanya untuk progres
+         unduhan update di notifikasi. Ditolak pun unduhan tetap jalan
+         (progres tampil di banner dalam aplikasi). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- usesCleartextTraffic: backend masih HTTP (IP, belum HTTPS) —
          Android 9+ memblokir cleartext secara default, tanpa ini login
          selalu gagal "tidak dapat terhubung ke server" meski server hidup.

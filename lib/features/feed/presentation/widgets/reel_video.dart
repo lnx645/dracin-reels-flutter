@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/playback/playback_state.dart';
 
 /// Video preview autoplay kartu Reels (gaya TikTok/Melolo).
 ///
@@ -97,6 +98,7 @@ class _ReelVideoState extends State<ReelVideo> {
 
   void _disposeController() {
     _initGen++;
+    final wasPlaying = _isPlaying;
     final controller = _controller;
     _controller = null;
     if (controller != null) {
@@ -106,6 +108,11 @@ class _ReelVideoState extends State<ReelVideo> {
     _initializing = false;
     _error = null;
     _isPlaying = false;
+    // Kartu yang sedang memutar dibuang → tandai tidak ada yang
+    // memutar (bila kartu lain mulai, ia menandainya lagi sendiri).
+    if (wasPlaying) {
+      playbackActive.value = false;
+    }
   }
 
   Future<void> _initController() async {
@@ -169,6 +176,7 @@ class _ReelVideoState extends State<ReelVideo> {
   /// Dispose tanpa menaikkan _initGen (dipakai di awal _initController
   /// yang sudah menaikkan generasi sendiri).
   void _disposeControllerWithoutGenBump() {
+    final wasPlaying = _isPlaying;
     final controller = _controller;
     _controller = null;
     if (controller != null) {
@@ -178,6 +186,9 @@ class _ReelVideoState extends State<ReelVideo> {
     _initializing = false;
     _error = null;
     _isPlaying = false;
+    if (wasPlaying) {
+      playbackActive.value = false;
+    }
   }
 
   void _onControllerUpdate() {
@@ -197,6 +208,10 @@ class _ReelVideoState extends State<ReelVideo> {
     if (playing != _isPlaying) {
       setState(() => _isPlaying = playing);
     }
+    // Gerbang updater: prompt instal tidak mengganggu saat preview
+    // Reels sedang memutar (hanya kartu aktif + terlihat yang dihitung).
+    playbackActive.value =
+        playing && widget.isActive && widget.isVisible;
   }
 
   void _playController() {

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../../core/playback/playback_state.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/api/api_client.dart';
@@ -178,6 +180,12 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    // Hanya bersihkan bila halaman ini yang sedang memutar (bila
+    // sudah jeda, nilai milik pemutar lain — mis. Reels yang lanjut
+    // sesudah pop — tidak boleh ditimpa).
+    if (_isPlaying) {
+      playbackActive.value = false;
+    }
     _playRequest.dispose();
     _seekRequest.dispose();
     // Keluar Player = prefetch dibatalkan (bila belum diklaim area).
@@ -271,6 +279,9 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     setState(() => _isPlaying = playing);
+    // Gerbang updater membaca ini: prompt instal tidak pernah
+    // mengganggu saat video sedang diputar (hanya banner).
+    playbackActive.value = playing;
     if (playing) {
       _resetHideTimer();
       // Episode aktif jalan → mulai prefetch berikutnya.
