@@ -198,10 +198,8 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(state.copyWith(isLoading: true));
     try {
       await _repository.unlockEpisode(event.episodeId);
-      if (!state.isApiMode &&
-          _repository is WalletRepositoryImpl) {
-        await (_repository as WalletRepositoryImpl)
-            .deductLocal(event.price);
+      if (!state.isApiMode && _repository is WalletRepositoryImpl) {
+        await _repository.deductLocal(event.price);
       }
       final wallet = await _repository.getBalance();
       emit(
