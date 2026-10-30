@@ -63,6 +63,7 @@ class VideoPlayerArea extends StatefulWidget {
     this.localFile,
     this.posterUrl = '',
     this.showControls = true,
+    this.thinProgressOnly = false,
     this.onPositionChanged,
     this.onDurationChanged,
     this.onAspectRatioChanged,
@@ -104,6 +105,13 @@ class VideoPlayerArea extends StatefulWidget {
   /// Bila false (state PLAY fokus), bar kontrol penuh diganti progress
   /// tipis — video tetap jalan, chrome disembunyikan.
   final bool showControls;
+
+  /// Mode fokus/fullscreen video saja (perintah uwa): bar bawah
+  /// BUKAN bar kontrol penuh (tombol + Slider + teks waktu), melainkan
+  /// progress tipis YANG BISA DI-SEEK — ketuk/geser = seek, tanpa
+  /// tombol apa pun. Dipakai PlayerPage saat fullscreen; pratinjau
+  /// form tetap memakai showControls (bar penuh).
+  final bool thinProgressOnly;
 
   /// Posisi putar terbaru (dilaporkan saat detik berubah — cukup untuk
   /// sinkronisasi subtitle; bukan setiap frame agar induk tidak
@@ -889,7 +897,9 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: widget.showControls ? 72 : 20,
+              bottom: widget.showControls
+                  ? 72
+                  : (widget.thinProgressOnly ? 40 : 20),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -929,8 +939,38 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
             bottom: 0,
             // State PLAY fokus: hanya progress tipis (posisi/durasi
             // nyata dari controller), tanpa tombol.
-            child: widget.showControls
-                ? Container(
+            // Mode fokus/fullscreen: progress tipis YANG BISA
+            // DI-SEEK (bukan indikator mati) — satu-satunya kontrol
+            // di mode video saja; ketuk video = jeda/putar.
+            child: widget.thinProgressOnly
+                ? SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 14,
+                      ),
+                    ),
+                    child: Slider(
+                      value: durationMs == 0 ? 0 : positionMs.toDouble(),
+                      max: durationMs == 0 ? 1 : durationMs.toDouble(),
+                      onChanged: durationMs == 0
+                          ? null
+                          : (value) {
+                              // Seek eksplisit pengguna: posisi
+                              // tersimpan yang tiba terlambat tidak
+                              // boleh menimpanya.
+                              _manualSeekHappened = true;
+                              controller.seekTo(
+                                Duration(milliseconds: value.round()),
+                              );
+                            },
+                    ),
+                  )
+                : widget.showControls
+                    ? Container(
                     color: Colors.black54,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../cubit/update_cubit.dart';
-import '../cubit/update_state.dart';
 import '../../domain/entities/update_info.dart';
 
 /// Dialog tawaran pembaruan: versi baru + changelog + dua tombol.

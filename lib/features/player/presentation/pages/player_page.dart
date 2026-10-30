@@ -158,6 +158,16 @@ class _PlayerPageState extends State<PlayerPage> {
   /// Posisi putar terbaru (untuk sinkronisasi subtitle).
   Duration _videoPosition = Duration.zero;
 
+  /// Episode ini sudah pernah diputar di sesi halaman ini (posisi
+  /// pernah > 0 atau pengguna pernah seek). Disimpan di STATE
+  /// HALAMAN (bukan state area video) — jadi bila area video
+  /// terpaksa dibuat ulang (controller baru), posisi lanjut yang
+  /// diteruskan tetap posisi TERBARU sesi ini, bukan posisi buka
+  /// episode yang sudah basi — dan seek ke 0 tetap dihormati
+  /// (posisi 0 + sesi pernah diputar = mulai dari 0, bukan lompat
+  /// ke simpanan lama).
+  bool _sessionPlayed = false;
+
   /// Deskripsi diperluas atau cuplikan 2 baris.
   bool _descriptionExpanded = false;
 
@@ -279,6 +289,17 @@ class _PlayerPageState extends State<PlayerPage> {
       return;
     }
     setState(() => _isPlaying = playing);
+    // CERMIN status putar: _playRequest SELALU sama dengan status
+    // nyata (ketuk video = play/pause langsung di controller, bukan
+    // lewat notifier — tanpa cermin ini, controller baru hasil
+    // re-init akan membaca playRequest basi (false) dan diam dalam
+    // keadaan jeda walau sebelumnya sedang diputar — persis keluhan
+    // "harus klik play lagi". Menulis nilai yang sama tidak
+    // memicu listener (ValueNotifier hanya notifikasi saat berubah),
+    // jadi tidak ada loop.
+    if (_playRequest.value != playing) {
+      _playRequest.value = playing;
+    }
     // Gerbang updater membaca ini: prompt instal tidak pernah
     // mengganggu saat video sedang diputar (hanya banner).
     playbackActive.value = playing;
@@ -310,7 +331,11 @@ class _PlayerPageState extends State<PlayerPage> {
 
   /// Layar penuh: kunci orientasi landscape; keluar → pulihkan semua
   /// orientasi. Controller video TIDAK dipindah — halaman yang sama
-  /// yang membesar, jadi posisi putar tidak hilang.
+  /// yang membesar, jadi posisi putar tidak hilang. LARANGAN KERAS
+  /// di jalur ini: tidak ada pause(), tidak ada ganti key, tidak ada
+  /// controller baru, tidak ada tulis playRequest — hanya setState
+  /// flag + orientasi + timer chrome. Bila sebelum pindah sedang
+  /// diputar → sesudah pindah tetap diputar; bila jeda → tetap jeda.
   void _toggleFullscreen() {
     setState(() => _fullscreen = !_fullscreen);
     if (_fullscreen) {
@@ -347,6 +372,9 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _onVideoPosition(Duration position) {
+    if (position > Duration.zero) {
+      _sessionPlayed = true;
+    }
     if (mounted) {
       setState(() => _videoPosition = position);
     }
@@ -592,6 +620,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _resumePosition = null;
       _resumeEpisodeId = 0;
       _resumeSuppressed = autoPlay;
+      _sessionPlayed = false;
       _lastSavedPosition = Duration.zero;
       _chromeVisible = true;
       _videoPosition = Duration.zero;
@@ -950,11 +979,22 @@ class _PlayerPageState extends State<PlayerPage> {
         // GlobalKey episode aktif: SATU controller untuk semua state
         // (pause/play/focus/fullscreen) — pindah mode tidak me-remount
         // area, posisi + status putar dipertahankan persis.
+        // REGRESI GUARD: ini SATU-SATUNYA call site VideoPlayerArea
+        // untuk episode aktif. JANGAN tambah area kedua (mis. khusus
+        // fullscreen/fokus) — area kedua = key berbeda = controller
+        // baru = posisi reset 0 + jeda (dua keluhan uwa terakhir).
         key: _videoKey,
         videoUrl: detail.videoUrl,
-        // Posisi lanjut episode ini (null = mulai dari 0: episode
-        // baru / auto-next / belum pernah dibuka).
-        initialPosition: _resumePosition,
+        // Posisi lanjut episode ini. Bila sesi ini sudah pernah
+        // memutar, posisi TERBARU sesi ini yang dipakai (bukan
+        // simpanan buka episode — itu basi bila controller terpaksa
+        // dibuat ulang di tengah tontonan). Bila belum pernah
+        // memutar di sesi ini, simpanan buka episode (_resumePosition;
+        // null = mulai dari 0: episode baru / auto-next / belum
+        // pernah dibuka). Seek ke 0 dihormati: sesi pernah diputar +
+        // posisi 0 = mulai dari 0, bukan lompat ke simpanan lama.
+        initialPosition:
+            _sessionPlayed ? _videoPosition : _resumePosition,
         // Judul untuk layar loading + tombol Kembali selama loading.
         title: detail.title.isNotEmpty
             ? 'Ep. ${detail.number} · ${detail.title}'
@@ -966,11 +1006,17 @@ class _PlayerPageState extends State<PlayerPage> {
         playRequest: _playRequest,
         onPlayingChanged: _onPlayingChanged,
         posterUrl: coverUrl,
-        // Portrait (PAUSE maupun PLAY fokus) = video bersih: kontrol
-        // penuh HANYA di fullscreen (seek + posisi/durasi di sana).
-        // PAUSE: progress + seek lewat Slider bawah (pola referensi);
-        // PLAY fokus: progress tipis di tepi bawah video.
-        showControls: _fullscreen,
+        // Fokus/fullscreen = VIDEO SAJA (perintah uwa: "tinggal
+        // ilangin aja button-button itu, gak perlu dibuatkan ulang"):
+        // tanpa rel, tanpa judul, tanpa pil, tanpa baris transport,
+        // tanpa bar kontrol penuh — hanya video + subtitle + progress
+        // tipis YANG BISA DI-SEEK (seek tetap mungkin di fullscreen).
+        // PAUSE normal: progress + seek lewat Slider bawah; PLAY
+        // fokus: progress tipis di tepi bawah video. Transisi fokus
+        // HANYA mengubah dua flag ini (layout) — tidak pernah
+        // menyentuh controller, key, atau playRequest.
+        showControls: false,
+        thinProgressOnly: _fullscreen,
         onPositionChanged: _onVideoPosition,
         onDurationChanged: _onVideoDuration,
         onAspectRatioChanged: _onVideoAspectRatio,
@@ -1292,6 +1338,12 @@ class _PlayerPageState extends State<PlayerPage> {
       // Baris bawah pola referensi: "Total N Ep · [status gratis] >"
       // (ketuk → bottom sheet Daftar Episode). Hanya bila daftar
       // episode series sudah dimuat (angka dari API, bukan karangan).
+      // REGRESI GUARD (perintah uwa: "tetep harus ada, jangan
+      // ilang"): baris ini TIDAK BOLEH DIHAPUS dalam perbaikan apa
+      // pun — ini satu-satunya cara manual pindah episode sesudah
+      // baris transport dihapus. Di mode fokus ia ikut tersembunyi
+      // bersama chrome lain, tapi HARUS kembali utuh saat keluar
+      // mode fokus (di sini ia selalu dibangun di PAUSE normal).
       if (seriesEpisodes.isNotEmpty)
         InkWell(
           onTap: () => _showEpisodeList(seriesEpisodes, seriesId),
