@@ -69,6 +69,8 @@ class VideoPlayerArea extends StatefulWidget {
     this.seekRequest,
     this.hlsUrl = '',
     this.prewarmed,
+    this.title = '',
+    this.onRequestClose,
     super.key,
   });
 
@@ -114,6 +116,15 @@ class VideoPlayerArea extends StatefulWidget {
   /// induk; episode terakhir ditangani induk sebagai status akhir).
   final VoidCallback? onVideoEnded;
 
+  /// Judul episode untuk layar loading (bukan '') — supaya pengguna
+  /// tahu video APA yang sedang dimuat, bukan menatap spinner kosong.
+  final String title;
+
+  /// Dipanggil tombol Kembali di layar loading (induk menutup Player).
+  /// Bila null (mis. pratinjau formulir), tombol Kembali tidak tampil
+  /// di area video — pratinjau bukan halaman yang bisa ditutup.
+  final VoidCallback? onRequestClose;
+
   /// Status putar yang diminta tombol Putar/Jeda di luar area video
   /// (true = putar, false = jeda). Perubahan di sini memutar/menjeda
   /// controller; perubahan dari controller sendiri (mis. ketuk video)
@@ -143,6 +154,13 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
   Duration _duration = Duration.zero;
   double _bufferedFraction = 0;
   bool _isBufferingValue = false;
+
+  /// Timer layar loading: detik berjalan + panel opsi lambat (>10 dtk).
+  /// Berjalan HANYA selama init; berhenti saat init selesai/gagal.
+  Timer? _loadingTimer;
+  int _loadingElapsed = 0;
+  bool _showSlowOptions = false;
+  bool _slowDismissed = false;
   bool _lastReportedPlaying = false;
   bool _everInitialized = false;
   bool _endedReported = false;
@@ -189,6 +207,7 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     widget.seekRequest?.removeListener(_onSeekRequest);
     _retryTimer?.cancel();
     _retryGen++;
+    _stopLoadingTimer();
     _disposeController();
     super.dispose();
   }
@@ -256,6 +275,37 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     _retryStatus = null;
     _resumeAfterRetry = true;
     _initController();
+  }
+
+  /// Timer detik loading: mulai tiap init, berhenti saat init selesai
+  /// / gagal / widget dibuang. Lewat 10 detik → panel opsi lambat
+  /// (Tetap menunggu / Coba lagi / Kembali), bukan spinner tanpa akhir.
+  void _startLoadingTimer() {
+    _stopLoadingTimer();
+    _loadingElapsed = 0;
+    _showSlowOptions = false;
+    _slowDismissed = false;
+    _loadingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) {
+        _stopLoadingTimer();
+        return;
+      }
+      if (!_initializing) {
+        _stopLoadingTimer();
+        return;
+      }
+      setState(() {
+        _loadingElapsed++;
+        if (_loadingElapsed >= 10 && !_slowDismissed) {
+          _showSlowOptions = true;
+        }
+      });
+    });
+  }
+
+  void _stopLoadingTimer() {
+    _loadingTimer?.cancel();
+    _loadingTimer = null;
   }
 
   /// Jadwalkan satu percobaan ulang dengan backoff 2/4/8/16/16 detik.
@@ -330,6 +380,7 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         _duration = Duration.zero;
         _bufferedFraction = 0;
       });
+      _startLoadingTimer();
     }
     try {
       // Timeout: jangan pernah "Memuat video…" tanpa akhir. File
@@ -351,6 +402,7 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         _initializing = false;
         _error = message;
       });
+      _stopLoadingTimer();
       return;
     }
     if (!mounted || _controller != controller) {
@@ -364,6 +416,7 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
       _autoRetryCount = 0;
       _duration = duration;
     });
+    _stopLoadingTimer();
     widget.onDurationChanged?.call(duration);
     // Lanjut dari posisi terakhir (retry jaringan) bila masih valid.
     if (_positionUrl == _resolvedUrl &&
@@ -529,26 +582,131 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
     }
     final controller = _controller;
     if (_initializing || controller == null || !controller.value.isInitialized) {
+      // Layar loading TIDAK BOLEH hitam kosong: cover episode (atau
+      // cover series bila thumbnail kosong — posterUrl sudah
+      // mengikuti aturan fallback) sebagai latar + judul episode +
+      // detik berjalan. Persen/MB buffer BELUM tersedia selama init
+      // (controller belum punya nilai) — yang ditampilkan jujur
+      // adalah detik berjalan + panel opsi lambat (>10 detik); persen
+      // buffer nyata tampil sesudah init lewat chip buffering.
+      // Selama init, video_player belum memberi angka buffer — angka
+      // apa pun di sini akan karangan, jadi tidak dibuat.
+      final loadingPoster = resolveMediaUrl(widget.posterUrl);
+      final elapsedText = _loadingElapsed > 0
+          ? 'Memuat video… $_loadingElapsed dtk'
+          : 'Memuat video…';
       return Container(
         color: Colors.black,
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Memuat video…', style: TextStyle(color: Colors.white)),
-              SizedBox(height: 8),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  'Koneksi lambat bisa membuat pemutaran lebih lama.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+        child: Stack(
+          children: <Widget>[
+            if (loadingPoster.isNotEmpty)
+              Positioned.fill(
+                child: Image.network(
+                  loadingPoster,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      Container(color: Colors.black),
                 ),
               ),
-            ],
-          ),
+            Positioned.fill(
+              child: Container(color: Colors.black54),
+            ),
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    if (widget.title.isNotEmpty)
+                      Text(
+                        widget.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (widget.title.isNotEmpty)
+                      const SizedBox(height: 8),
+                    Text(
+                      elapsedText,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Koneksi lambat bisa membuat pemutaran lebih lama.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    // Panel opsi lambat (>10 detik): pengguna TIDAK
+                    // PERNAH dijebak spinner tanpa akhir.
+                    if (_showSlowOptions) ...<Widget>[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Text(
+                              'Memuat sudah lebih dari 10 detik.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            const SizedBox(height: 12),
+                            TextButton(
+                              onPressed: () => setState(() {
+                                _showSlowOptions = false;
+                                _slowDismissed = true;
+                              }),
+                              child: const Text('Tetap menunggu'),
+                            ),
+                            ElevatedButton(
+                              onPressed: _manualRetry,
+                              child: const Text('Coba lagi'),
+                            ),
+                            if (widget.onRequestClose != null)
+                              TextButton(
+                                onPressed: widget.onRequestClose,
+                                child: const Text('Kembali'),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            // Tombol Kembali SELALU terlihat selama loading (di atas
+            // area video sendiri, tidak bergantung pada chrome header)
+            // — keluar dari Player kapan saja, controller dilepas
+            // bersih lewat dispose.
+            if (widget.onRequestClose != null)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    tooltip: 'Kembali',
+                    onPressed: widget.onRequestClose,
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     }
