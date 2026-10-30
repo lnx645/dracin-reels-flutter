@@ -16,6 +16,7 @@ import 'features/notifications/presentation/pages/notifications_page.dart';
 import 'features/player/presentation/pages/player_page.dart';
 import 'features/profile/presentation/pages/profile_page.dart';
 import 'features/series/domain/repositories/series_repository.dart';
+import 'features/update/presentation/widgets/update_gate.dart';
 import 'features/wallet/domain/repositories/wallet_repository.dart';
 import 'features/wallet/presentation/bloc/wallet_bloc.dart';
 import 'features/wallet/presentation/pages/rewards_page.dart';
@@ -70,7 +71,7 @@ class DracinApp extends StatelessWidget {
             title: 'Dracin Reels',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.dark,
-            home: const MainShell(),
+            home: const UpdateGate(child: MainShell()),
             routes: <String, WidgetBuilder>{
               '/login': (_) => const LoginPage(),
               '/rewards': (_) => const RewardsPage(),

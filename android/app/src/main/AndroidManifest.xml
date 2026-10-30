@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Izin memasang APK dari updater (Android 8+ tetap meminta
+         persetujuan pengguna di Pengaturan + satu ketukan "Instal"
+         di installer sistem; instal sunyi penuh tidak mungkin
+         untuk APK sideload). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- usesCleartextTraffic: backend masih HTTP (IP, belum HTTPS) —
          Android 9+ memblokir cleartext secara default, tanpa ini login
          selalu gagal "tidak dapat terhubung ke server" meski server hidup.
@@ -29,5 +34,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- FileProvider untuk menyerahkan APK unduhan ke installer
+             sistem (berkas di folder file eksternal aplikasi). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

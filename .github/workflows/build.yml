@@ -22,7 +22,11 @@ jobs:
           channel: stable
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter build apk --release
+      # Token updater diteruskan sebagai build define saja (bukan commit):
+      # berasal dari repo secret UPDATER_GITHUB_TOKEN (baca-saja, khusus
+      # repo ini). Bila secret kosong, define kosong dan updater di
+      # aplikasi menonaktifkan diri dengan diam.
+      - run: flutter build apk --release --dart-define=GITHUB_TOKEN=${{ secrets.UPDATER_GITHUB_TOKEN }}
       - name: Verify APK
         run: ls -lh build/app/outputs/flutter-apk/app-release.apk
       - uses: actions/upload-artifact@v4
@@ -35,8 +39,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk dracin-reels.apk
-          if gh release view v0.2.0 >/dev/null 2>&1; then
-            gh release upload v0.2.0 dracin-reels.apk --clobber
+          # Tag + versionCode dibaca dari pubspec (bukan hardcode), agar
+          # updater di versi lama dapat membedakan rilis baru. Baris
+          # "versionCode: N" di catatan rilis dipakai updater untuk
+          # perbandingan numerik; tag semver dipakai bila baris itu
+          # tidak ada (rilis lama).
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          CODE=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f2)
+          TAG="v$VERSION"
+          NOTES="Dracin Reels Flutter $TAG - updater semi-otomatis dari GitHub Release (cek latar belakang, unduh APK, pasang lewat installer sistem satu ketukan).
+
+          versionCode: $CODE
+
+          Video belum memutar; pembayaran/iklan beneran belum ada."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dracin-reels.apk --clobber
+            gh release edit "$TAG" --notes "$NOTES"
           else
-            gh release create v0.2.0 dracin-reels.apk --title "v0.2.0" --notes "Dracin Reels Flutter v0.2.0 - fitur Melolo fase 2 + mode Admin + polish UI. Video belum memutar; pembayaran/iklan beneran belum ada."
+            gh release create "$TAG" dracin-reels.apk --title "$TAG" --notes "$NOTES"
           fi

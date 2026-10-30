@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jalur yang boleh dibagikan FileProvider updater ke installer sistem:
+     hanya folder updates/ di dalam folder file eksternal aplikasi. -->
+<paths>
+    <external-files-path name="updates" path="updates/" />
+</paths>

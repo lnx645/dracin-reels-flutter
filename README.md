@@ -97,5 +97,36 @@ Build HANYA lewat GitHub Actions (JANGAN build Gradle/Android di VPS):
 - `flutter pub get`, `flutter analyze`, `flutter build apk --release`
 - APK universal (fat): armeabi-v7a + arm64-v8a + x86_64
   (tanpa `--split-per-abi`, agar HP 32-bit bisa instal)
-- Hasil: artifact + GitHub Release `v0.2.0` berisi `dracin-reels.apk`
-  (ditandatangani kunci debug, bukan kunci Play Store).
+- Hasil: artifact + GitHub Release berisi `dracin-reels.apk`
+  (tag dari versi `pubspec.yaml`, ditandatangani kunci debug,
+  bukan kunci Play Store).
+
+## Updater semi-otomatis (dari GitHub Release)
+
+Alur: saat aplikasi dibuka, `UpdateGate` memeriksa GitHub Releases API
+di latar belakang (sekali sehari, tidak menghambat buka aplikasi).
+Bila ada rilis lebih baru → dialog "Update tersedia vX.Y.Z" +
+changelog + tombol "Update Sekarang" / "Nanti" (tidak ada update
+paksa). "Update Sekarang" mengunduh APK dengan progress bar, lalu
+membuka installer sistem lewat `FileProvider` + `MethodChannel`
+(`MainActivity`).
+
+Batasan jujur: instal sunyi penuh TIDAK MUNGKIN untuk APK sideload —
+Android selalu menampilkan installer sistem dan meminta satu ketukan
+"Instal". Gagal unduh → pesan jelas, versi lama tetap berjalan.
+
+Token: repo ini privat, jadi pemeriksaan + unduhan memakai token
+baca-saja yang diteruskan saat build sebagai
+`--dart-define=GITHUB_TOKEN=...` dari repo secret
+`UPDATER_GITHUB_TOKEN` (bukan token utama, tidak pernah di-commit).
+Bila define kosong, updater menonaktifkan diri dengan diam.
+Perbandingan versi: versionCode numerik dari baris `versionCode: N`
+di catatan rilis (ditulis workflow sejak v0.2.1); bila tidak ada,
+dipakai semver tag. Tag rilis dibaca workflow dari `pubspec.yaml`,
+bukan hardcode.
+
+Cara uji: instal APK versi lama (mis. v0.2.0), buka aplikasi —
+dialog update harus muncul karena Release terbaru lebih baru.
+Ketuk "Update Sekarang", tunggu unduhan, ketuk "Instal" di
+installer sistem. Pengujian end-to-end di HP hanya bisa dilakukan
+di perangkat (bukan dari sandbox).
