@@ -1,10 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../core/api/api_client.dart';
-import '../data/repositories/wallet_repository_impl.dart';
-import '../domain/entities/history.dart';
-import '../domain/entities/wallet.dart';
-import '../domain/repositories/wallet_repository.dart';
+import '../../../../core/api/api_client.dart';
+import '../../data/repositories/wallet_repository_impl.dart';
+import '../../domain/entities/history.dart';
+import '../../domain/entities/wallet.dart';
+import '../../domain/repositories/wallet_repository.dart';
 
 abstract class WalletEvent {
   const WalletEvent();

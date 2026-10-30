@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'admin_content.dart';
+import '../entities/admin_content.dart';
 
 /// Kontrak repository admin: hanya dipanggil dengan JWT role=admin.
 /// Viewer mendapat 403 dari API (bukan dari klien yang menyembunyikan).

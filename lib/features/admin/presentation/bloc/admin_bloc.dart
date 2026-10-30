@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../core/api/api_client.dart';
-import '../domain/repositories/admin_repository.dart';
+import '../../../../core/api/api_client.dart';
+import '../../domain/repositories/admin_repository.dart';
 
 abstract class AdminEvent {
   const AdminEvent();

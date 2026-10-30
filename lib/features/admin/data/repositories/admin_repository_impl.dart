@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import '../../../core/api/api_client.dart';
-import '../domain/entities/admin_content.dart';
-import '../domain/repositories/admin_repository.dart';
+import '../../../../core/api/api_client.dart';
+import '../../domain/entities/admin_content.dart';
+import '../../domain/repositories/admin_repository.dart';
 
 /// Repository admin via API. Semua error diteruskan apa adanya
 /// (401 tanpa token, 403 viewer) agar UI menampilkan pesan jelas.

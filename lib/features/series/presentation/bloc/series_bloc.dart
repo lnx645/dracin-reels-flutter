@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../series/domain/entities/series.dart';
-import '../../series/domain/repositories/series_repository.dart';
+import '../../domain/entities/series.dart';
+import '../../domain/repositories/series_repository.dart';
 
 abstract class SeriesListEvent {
   const SeriesListEvent();

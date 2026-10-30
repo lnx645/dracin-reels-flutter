@@ -33,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
     final ok = await context.read<SessionCubit>().login(email, password);
-    if (!context.mounted) {
+    if (!mounted) {
       return;
     }
     if (ok) {

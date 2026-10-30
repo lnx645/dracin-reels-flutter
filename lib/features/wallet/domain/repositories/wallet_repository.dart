@@ -1,5 +1,5 @@
-import 'history.dart';
-import 'wallet.dart';
+import '../entities/history.dart';
+import '../entities/wallet.dart';
 
 /// Kontrak repository dompet: API bila login, lokal bila belum masuk.
 /// Semua metode yang butuh login dan dipanggil tanpa token memakai mode

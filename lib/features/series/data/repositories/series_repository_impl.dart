@@ -1,6 +1,6 @@
-import '../../../core/api/api_client.dart';
-import '../../series/domain/entities/series.dart';
-import '../../series/domain/repositories/series_repository.dart';
+import '../../../../core/api/api_client.dart';
+import '../../domain/entities/series.dart';
+import '../../domain/repositories/series_repository.dart';
 
 /// Repository series: API dulu, sampel lokal bila API tidak terjangkau.
 /// Sampel memakai naskah orisinal Qin yang sama dengan feed (harga kunci

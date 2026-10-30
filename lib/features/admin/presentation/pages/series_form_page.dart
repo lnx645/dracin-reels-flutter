@@ -204,7 +204,7 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _status,
+              initialValue: _status,
               decoration: const InputDecoration(hintText: 'Status'),
               items: const <DropdownMenuItem<String>>[
                 DropdownMenuItem(value: 'draft', child: Text('Draf')),

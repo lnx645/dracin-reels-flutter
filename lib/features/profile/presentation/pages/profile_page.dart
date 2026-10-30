@@ -9,7 +9,7 @@ import '../../../history/presentation/pages/history_page.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/pages/rewards_page.dart';
 import '../../../wallet/presentation/pages/vip_page.dart';
-import '../../domain/repositories/episode_repository.dart';
+import '../../../feed/domain/repositories/episode_repository.dart';
 import '../bloc/profile_bloc.dart';
 
 class ProfilePage extends StatelessWidget {
