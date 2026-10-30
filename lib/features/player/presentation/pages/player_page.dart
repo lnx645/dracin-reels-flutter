@@ -2222,14 +2222,18 @@ class _PlayerPageState extends State<PlayerPage> {
                                       _fullscreenPill(),
                                       SizedBox(height: gapPillBottom),
                                       // Info = elemen terakhir, tinggi
-                                      // = konten (shrinkWrap, bukan
-                                      // viewport) → baris Total mentok
+                                      // = konten → baris Total mentok
                                       // bawah dengan padding kecil
                                       // saja; bila konten melebihi
                                       // sisa ruang, ia scroll.
-                                      SingleChildScrollView(
+                                      // ListView (bukan
+                                      // SingleChildScrollView: widget
+                                      // itu TIDAK punya shrinkWrap —
+                                      // itulah yang menggagalkan
+                                      // analyze 0.2.16).
+                                      ListView(
                                         shrinkWrap: true,
-                                        child: info,
+                                        children: <Widget>[info],
                                       ),
                                     ],
                                   ),
