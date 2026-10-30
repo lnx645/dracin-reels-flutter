@@ -21,7 +21,7 @@ class SeriesDetailPage extends StatefulWidget {
 
   final int seriesId;
 
-  /// Dibuka dengan id sampel feed (`ep1`..`ep5`) sesuai nomor episode.
+  /// Dibuka dengan id episode API (`s{seriesId}e{episodeId}`).
   final void Function(String episodeId) onOpenEpisode;
 
   @override
@@ -29,7 +29,6 @@ class SeriesDetailPage extends StatefulWidget {
 }
 
 class _SeriesDetailPageState extends State<SeriesDetailPage> {
-  final Set<int> _localUnlocked = <int>{};
   int? _pendingUnlockId;
   String? _lastErrorShown;
   int? _lastUnlockShown;
@@ -45,14 +44,12 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     SeriesEpisode episode,
   ) async {
     final wallet = context.read<WalletBloc>().state;
-    final unlocked = !episode.locked ||
-        _localUnlocked.contains(episode.id) ||
-        wallet.vip.isActive;
+    final unlocked = !episode.locked || wallet.vip.isActive;
     if (unlocked) {
       // Pop DULU lalu buka player (bukan sebaliknya, supaya pop tidak
       // menutup player yang baru dibuka). Player yang mencatat riwayat.
       Navigator.of(context).pop();
-      widget.onOpenEpisode('ep${episode.number}');
+      widget.onOpenEpisode('s${widget.seriesId}e${episode.id}');
       return;
     }
     final session = context.read<SessionCubit>().state;
@@ -82,13 +79,24 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       }
       return;
     }
+    final int? balance = wallet.balance;
+    if (balance == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saldo tidak dapat dimuat. Coba lagi.'),
+          ),
+        );
+      }
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('Buka Episode ${episode.number}?'),
         content: Text(
           '${episode.title}\n\nHarga: ${episode.coinPrice} koin. '
-          'Saldo Anda: ${wallet.balance} koin.',
+          'Saldo Anda: $balance koin.',
         ),
         actions: <Widget>[
           TextButton(
@@ -105,7 +113,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     if (confirmed != true || !context.mounted) {
       return;
     }
-    if (wallet.balance < episode.coinPrice) {
+    if (balance < episode.coinPrice) {
       if (!context.mounted) {
         return;
       }
@@ -115,7 +123,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           title: const Text('Koin tidak cukup'),
           content: Text(
             'Harga ${episode.coinPrice} koin, saldo Anda '
-            '${wallet.balance} koin. Klaim check-in harian untuk '
+            '$balance koin. Klaim check-in harian untuk '
             'menambah koin.',
           ),
           actions: <Widget>[
@@ -158,7 +166,6 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
               _lastUnlockShown != unlockedId) {
             _lastUnlockShown = unlockedId;
             setState(() {
-              _localUnlocked.add(unlockedId!);
               _pendingUnlockId = null;
             });
             context.read<SeriesDetailBloc>().add(
@@ -182,6 +189,37 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         child: BlocBuilder<SeriesDetailBloc, SeriesDetailState>(
           builder: (context, state) {
             final detail = state.detail;
+            if (state.errorMessage != null) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Detail Series')),
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Icon(Icons.cloud_off, size: 64),
+                        const SizedBox(height: 16),
+                        Text(
+                          state.errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => context
+                              .read<SeriesDetailBloc>()
+                              .add(
+                                SeriesDetailStarted(widget.seriesId),
+                              ),
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
             if (state.isLoading || detail == null) {
               return Scaffold(
                 appBar: AppBar(title: const Text('Detail Series')),
@@ -238,7 +276,6 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                       final wallet =
                           context.read<WalletBloc>().state;
                       final unlocked = !episode.locked ||
-                          _localUnlocked.contains(episode.id) ||
                           wallet.vip.isActive;
                       return EpisodeRow(
                         episode: episode,
@@ -248,14 +285,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                       );
                     }),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Video belum memutar (UI saja). Area video pada '
                       'feed masih placeholder sampai pemutar beneran '
                       'dipasang.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
+                      style: theme.textTheme.bodySmall,
                     ),
                   ],
                 ),

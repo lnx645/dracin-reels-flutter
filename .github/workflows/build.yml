@@ -29,6 +29,16 @@ jobs:
       - run: flutter build apk --release --dart-define=GITHUB_TOKEN=${{ secrets.UPDATER_GITHUB_TOKEN }}
       - name: Verify APK
         run: ls -lh build/app/outputs/flutter-apk/app-release.apk
+      # Bukti permission dari APK HASIL BUILD (bukan dari sumber):
+      # daftar permission dibaca dari APK lewat aapt2, dan build GAGAL
+      # bila INTERNET tidak ada — ini yang pernah hilang diam-diam dan
+      # membuat login selalu "tidak dapat terhubung".
+      - name: Verify APK permissions
+        shell: bash
+        run: |
+          AAPT=$(echo "$ANDROID_HOME"/build-tools/*/aapt2 | awk '{print $1}')
+          "$AAPT" dump badging build/app/outputs/flutter-apk/app-release.apk | grep "uses-permission"
+          "$AAPT" dump badging build/app/outputs/flutter-apk/app-release.apk | grep -q "android.permission.INTERNET" || { echo "INTERNET permission missing from APK"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: dracin-reels-apk

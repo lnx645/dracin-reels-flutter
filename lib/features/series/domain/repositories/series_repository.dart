@@ -1,6 +1,8 @@
 import '../entities/series.dart';
 
-/// Kontrak repository series: API bila terjangkau, sampel lokal bila tidak.
+/// Kontrak repository series: HANYA API. Gagal = ApiException
+/// diteruskan (UI menampilkan error asli + Coba Lagi); kosong = daftar
+/// kosong (UI menampilkan empty state jujur). Tanpa fallback sampel.
 abstract class SeriesRepository {
   Future<List<Series>> getSeries({String? genreSlug, String? query});
   Future<List<Genre>> getGenres();

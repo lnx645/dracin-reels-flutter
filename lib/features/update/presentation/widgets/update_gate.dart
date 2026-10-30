@@ -30,10 +30,11 @@ class _UpdateGateState extends State<UpdateGate> {
   @override
   void initState() {
     super.initState();
+    final ApkInstaller installer = ApkInstaller();
     _cubit = UpdateCubit(
       UpdateRepositoryImpl(GithubReleaseDataSource()),
-      UpdateDownloader(),
-      ApkInstaller(),
+      UpdateDownloader(installer),
+      installer,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {

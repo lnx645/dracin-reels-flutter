@@ -37,15 +37,29 @@ class _CommentsSheetState extends State<CommentsSheet> {
   }
 
   Future<void> _load() async {
-    final repository = context.read<WalletRepository>();
-    final comments = await repository.getComments(widget.episodeId);
-    if (!mounted) {
-      return;
-    }
     setState(() {
-      _comments = comments;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    final repository = context.read<WalletRepository>();
+    try {
+      final comments = await repository.getComments(widget.episodeId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _comments = comments;
+        _loading = false;
+      });
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _send() async {
@@ -143,9 +157,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                _error!,
-                style: const TextStyle(color: Colors.redAccent),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loading ? null : _load,
+                    child: const Text('Coba Lagi'),
+                  ),
+                ],
               ),
             ),
           if (!session.isAuthenticated)

@@ -4,6 +4,11 @@
          di installer sistem; instal sunyi penuh tidak mungkin
          untuk APK sideload). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Izin INTERNET — WAJIB eksplisit: tanpa ini Android memblokir
+         SEMUA akses jaringan aplikasi, sehingga login selalu gagal
+         "tidak dapat terhubung" meski server hidup dan cleartext sudah
+         benar. Izin normal: otomatis dikabulkan, tanpa prompt. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- usesCleartextTraffic: backend masih HTTP (IP, belum HTTPS) —
          Android 9+ memblokir cleartext secara default, tanpa ini login
          selalu gagal "tidak dapat terhubung ke server" meski server hidup.

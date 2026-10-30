@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../domain/entities/series.dart';
 import '../../domain/repositories/series_repository.dart';
 
@@ -30,6 +31,7 @@ class SeriesListState {
     this.selectedGenre,
     this.query = '',
     this.isLoading = false,
+    this.errorMessage,
   });
 
   final List<Series> series;
@@ -38,6 +40,9 @@ class SeriesListState {
   final String query;
   final bool isLoading;
 
+  /// Pesan error ASLI dari request API terakhir.
+  final String? errorMessage;
+
   SeriesListState copyWith({
     List<Series>? series,
     List<Genre>? genres,
@@ -45,6 +50,8 @@ class SeriesListState {
     bool clearGenre = false,
     String? query,
     bool? isLoading,
+    String? errorMessage,
+    bool clearError = false,
   }) {
     return SeriesListState(
       series: series ?? this.series,
@@ -52,6 +59,7 @@ class SeriesListState {
       selectedGenre: clearGenre ? null : selectedGenre ?? this.selectedGenre,
       query: query ?? this.query,
       isLoading: isLoading ?? this.isLoading,
+      errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
   }
 }
@@ -66,20 +74,29 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
   final SeriesRepository _repository;
 
   Future<void> _reload(Emitter<SeriesListState> emit) async {
-    final list = await _repository.getSeries(
-      genreSlug: state.selectedGenre,
-      query: state.query.isEmpty ? null : state.query,
-    );
-    emit(state.copyWith(series: list, isLoading: false));
+    try {
+      final list = await _repository.getSeries(
+        genreSlug: state.selectedGenre,
+        query: state.query.isEmpty ? null : state.query,
+      );
+      emit(state.copyWith(series: list, isLoading: false, clearError: true));
+    } on ApiException catch (error) {
+      emit(state.copyWith(isLoading: false, errorMessage: error.message));
+    }
   }
 
   Future<void> _onStarted(
     SeriesListStarted event,
     Emitter<SeriesListState> emit,
   ) async {
-    emit(state.copyWith(isLoading: true));
-    final genres = await _repository.getGenres();
-    emit(state.copyWith(genres: genres));
+    emit(state.copyWith(isLoading: true, clearError: true));
+    try {
+      final genres = await _repository.getGenres();
+      emit(state.copyWith(genres: genres));
+    } on ApiException catch (error) {
+      emit(state.copyWith(isLoading: false, errorMessage: error.message));
+      return;
+    }
     await _reload(emit);
   }
 
@@ -92,6 +109,7 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
         selectedGenre: event.slug,
         clearGenre: event.slug == null,
         isLoading: true,
+        clearError: true,
       ),
     );
     await _reload(emit);
@@ -101,7 +119,7 @@ class SeriesListBloc extends Bloc<SeriesListEvent, SeriesListState> {
     SeriesListQueryChanged event,
     Emitter<SeriesListState> emit,
   ) async {
-    emit(state.copyWith(query: event.query, isLoading: true));
+    emit(state.copyWith(query: event.query, isLoading: true, clearError: true));
     await _reload(emit);
   }
 }
@@ -131,11 +149,12 @@ class SeriesDetailState {
     SeriesDetail? detail,
     bool? isLoading,
     String? errorMessage,
+    bool clearError = false,
   }) {
     return SeriesDetailState(
       detail: detail ?? this.detail,
       isLoading: isLoading ?? this.isLoading,
-      errorMessage: errorMessage,
+      errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
     );
   }
 }
@@ -152,8 +171,12 @@ class SeriesDetailBloc extends Bloc<SeriesDetailEvent, SeriesDetailState> {
     SeriesDetailStarted event,
     Emitter<SeriesDetailState> emit,
   ) async {
-    emit(state.copyWith(isLoading: true));
-    final detail = await _repository.getSeriesDetail(event.seriesId);
-    emit(state.copyWith(detail: detail, isLoading: false));
+    emit(state.copyWith(isLoading: true, clearError: true));
+    try {
+      final detail = await _repository.getSeriesDetail(event.seriesId);
+      emit(state.copyWith(detail: detail, isLoading: false));
+    } on ApiException catch (error) {
+      emit(state.copyWith(isLoading: false, errorMessage: error.message));
+    }
   }
 }

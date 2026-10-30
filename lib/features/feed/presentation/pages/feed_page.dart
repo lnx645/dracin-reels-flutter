@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -72,8 +70,45 @@ class _FeedPageState extends State<FeedPage> {
       },
       builder: (context, state) {
         final episodes = state.visibleEpisodes;
-        if (episodes.isEmpty) {
+        if (state.errorMessage != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.cloud_off, size: 64),
+                  const SizedBox(height: 16),
+                  Text(
+                    state.errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context
+                        .read<FeedBloc>()
+                        .add(const FeedStarted()),
+                    child: const Text('Coba Lagi'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (state.isLoading) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (episodes.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Belum ada data.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
         }
         return Column(
           children: <Widget>[
@@ -123,7 +158,7 @@ class ReelCard extends StatefulWidget {
 
   final Episode episode;
 
-  /// Dibuka dengan id sampel feed (`ep1`..`ep5`) sesuai nomor episode.
+  /// Dibuka dengan id episode API (`s{seriesId}e{episodeId}`).
   final void Function(String episodeId) onOpenEpisode;
 
   @override
@@ -132,28 +167,47 @@ class ReelCard extends StatefulWidget {
 
 class _ReelCardState extends State<ReelCard> {
 
-  void _toggleLike() {
+  Future<void> _toggleLike() async {
     final episode = widget.episode;
+    final bool wasLiked = episode.isLiked;
     context.read<FeedBloc>().add(FeedLikeToggled(episode.id));
-    // Sinkronisasi API best-effort (id API = nomor episode series Qin).
-    unawaited(
-      context.read<WalletRepository>().toggleLike(
-            episode.number,
-            !episode.isLiked,
-          ),
-    );
+    // Sinkronisasi API (id episode API; nomor dipakai hanya bila id
+    // API tidak diketahui). Gagal → toggle dibatalkan + pesan asli.
+    try {
+      await context.read<WalletRepository>().toggleLike(
+            episode.apiEpisodeId > 0 ? episode.apiEpisodeId : episode.number,
+            !wasLiked,
+          );
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      context.read<FeedBloc>().add(FeedLikeToggled(episode.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
-  void _toggleBookmark() {
+  Future<void> _toggleBookmark() async {
     final episode = widget.episode;
+    final bool wasBookmarked = episode.isBookmarked;
     context.read<FeedBloc>().add(FeedBookmarkToggled(episode.id));
-    // Bookmark API per series (series Qin id 1).
-    unawaited(
-      context.read<WalletRepository>().toggleBookmark(
-            1,
-            !episode.isBookmarked,
-          ),
-    );
+    // Bookmark API per series pemilik episode.
+    try {
+      await context.read<WalletRepository>().toggleBookmark(
+            episode.seriesId,
+            !wasBookmarked,
+          );
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      context.read<FeedBloc>().add(FeedBookmarkToggled(episode.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
   void _openPlayer(String episodeId) {

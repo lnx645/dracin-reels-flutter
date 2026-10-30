@@ -6,7 +6,7 @@ class GetEpisodes {
 
   final EpisodeRepository _repository;
 
-  List<Episode> call() => _repository.getEpisodes();
+  Future<List<Episode>> call() => _repository.getEpisodes();
 }
 
 class ToggleLike {

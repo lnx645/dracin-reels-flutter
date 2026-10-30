@@ -1,7 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
-import '../../data/repositories/wallet_repository_impl.dart';
 import '../../domain/entities/history.dart';
 import '../../domain/entities/wallet.dart';
 import '../../domain/repositories/wallet_repository.dart';
@@ -40,8 +39,8 @@ class WalletContinueSaved extends WalletEvent {
     required this.episodeId,
     required this.title,
     required this.number,
-    this.seriesId = 1,
-    this.seriesTitle = 'CINTA SANG PENGUASA QIN',
+    required this.seriesId,
+    required this.seriesTitle,
   });
 
   final int episodeId;
@@ -53,8 +52,8 @@ class WalletContinueSaved extends WalletEvent {
 
 class WalletState {
   const WalletState({
-    this.balance = 100,
-    this.isApiMode = false,
+    this.balance,
+    this.loggedIn = false,
     this.isLoading = false,
     this.vip = const VipInfo(isActive: false),
     this.packages = const <CoinPackage>[],
@@ -66,8 +65,12 @@ class WalletState {
     this.lastUnlockedId,
   });
 
-  final int balance;
-  final bool isApiMode;
+  /// Saldo dari API; null = belum masuk atau gagal dimuat (bukan 100
+  /// contoh — angka itu sudah dihapus).
+  final int? balance;
+
+  /// True bila ada sesi login.
+  final bool loggedIn;
   final bool isLoading;
   final VipInfo vip;
   final List<CoinPackage> packages;
@@ -84,7 +87,8 @@ class WalletState {
 
   WalletState copyWith({
     int? balance,
-    bool? isApiMode,
+    bool clearBalance = false,
+    bool? loggedIn,
     bool? isLoading,
     VipInfo? vip,
     List<CoinPackage>? packages,
@@ -96,8 +100,8 @@ class WalletState {
     int? lastUnlockedId,
   }) {
     return WalletState(
-      balance: balance ?? this.balance,
-      isApiMode: isApiMode ?? this.isApiMode,
+      balance: clearBalance ? null : balance ?? this.balance,
+      loggedIn: loggedIn ?? this.loggedIn,
       isLoading: isLoading ?? this.isLoading,
       vip: vip ?? this.vip,
       packages: packages ?? this.packages,
@@ -126,33 +130,61 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
   final WalletRepository _repository;
 
   Future<void> _loadAll(Emitter<WalletState> emit) async {
-    final wallet = await _repository.getBalance();
-    final vip = await _repository.getVip();
-    final packages = await _repository.getPackages();
-    final tasks = await _repository.getTasks();
-    final history = await _repository.getHistory();
-    final continueItems = history
-        .map(
-          (entry) => ContinueItem(
-            episodeId: entry.episodeId,
-            title: entry.title,
-            number: entry.number,
-            positionSeconds: entry.positionSeconds,
-            finished: entry.finished,
-          ),
-        )
-        .toList();
-    emit(
-      state.copyWith(
-        balance: wallet.balance,
-        isApiMode: wallet.isApiMode,
-        vip: vip,
-        packages: packages,
-        tasks: tasks,
-        historyItems: history,
-        continueItems: continueItems,
-      ),
-    );
+    // Katalog publik selalu bisa dimuat (anonim); data akun hanya bila
+    // login. Kegagalan akun saat login = error asli (bukan angka contoh).
+    List<CoinPackage> packages = state.packages;
+    List<RewardTask> tasks = state.tasks;
+    try {
+      packages = await _repository.getPackages();
+      tasks = await _repository.getTasks();
+    } on ApiException catch (error) {
+      emit(state.copyWith(errorMessage: error.message));
+      return;
+    }
+    if (!_repository.hasSession) {
+      emit(
+        state.copyWith(
+          clearBalance: true,
+          loggedIn: false,
+          vip: const VipInfo(isActive: false),
+          packages: packages,
+          tasks: tasks,
+          historyItems: <HistoryEntry>[],
+          continueItems: <ContinueItem>[],
+        ),
+      );
+      return;
+    }
+    try {
+      final wallet = await _repository.getBalance();
+      final vip = await _repository.getVip();
+      final history = await _repository.getHistory();
+      final continueItems = history
+          .map(
+            (entry) => ContinueItem(
+              episodeId: entry.episodeId,
+              title: entry.title,
+              number: entry.number,
+              positionSeconds: entry.positionSeconds,
+              finished: entry.finished,
+              seriesId: entry.seriesId,
+            ),
+          )
+          .toList();
+      emit(
+        state.copyWith(
+          balance: wallet.balance,
+          loggedIn: true,
+          vip: vip,
+          packages: packages,
+          tasks: tasks,
+          historyItems: history,
+          continueItems: continueItems,
+        ),
+      );
+    } on ApiException catch (error) {
+      emit(state.copyWith(errorMessage: error.message));
+    }
   }
 
   Future<void> _onStarted(
@@ -198,15 +230,12 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
     emit(state.copyWith(isLoading: true));
     try {
       await _repository.unlockEpisode(event.episodeId);
-      if (!state.isApiMode && _repository is WalletRepositoryImpl) {
-        await _repository.deductLocal(event.price);
-      }
       final wallet = await _repository.getBalance();
       emit(
         state.copyWith(
           isLoading: false,
           balance: wallet.balance,
-          isApiMode: wallet.isApiMode,
+          loggedIn: wallet.loggedIn,
           infoMessage: 'Episode terbuka! Selamat menonton.',
           lastUnlockedId: event.episodeId,
         ),
@@ -231,7 +260,7 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
           isLoading: false,
           vip: vip,
           infoMessage:
-              'VIP (sampel) berhasil diklaim. Pembayaran beneran menyusul.',
+              'VIP berhasil diklaim. Pembayaran beneran menyusul.',
         ),
       );
     } on ApiException catch (error) {
@@ -266,6 +295,7 @@ class WalletBloc extends Bloc<WalletEvent, WalletState> {
             number: entry.number,
             positionSeconds: entry.positionSeconds,
             finished: entry.finished,
+            seriesId: entry.seriesId,
           ),
         )
         .toList();

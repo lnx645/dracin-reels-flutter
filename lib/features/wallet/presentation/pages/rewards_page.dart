@@ -75,11 +75,45 @@ class _RewardsPageState extends State<RewardsPage> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: <Widget>[
+                  if (state.errorMessage != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              state.errorMessage!,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () => context
+                                .read<WalletBloc>()
+                                .add(const WalletRefreshed()),
+                            child: const Text('Coba Lagi'),
+                          ),
+                        ],
+                      ),
+                    ),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(16),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x40000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Row(
                       children: <Widget>[
@@ -94,14 +128,24 @@ class _RewardsPageState extends State<RewardsPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               Text(
-                                '${state.balance} Koin',
-                                style: theme.textTheme.titleLarge,
+                                'SALDO KOIN',
+                                style: theme.textTheme.labelMedium
+                                    ?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                state.isApiMode
-                                    ? 'Saldo dari server (masuk)'
-                                    : 'Saldo lokal (belum masuk)',
+                                state.balance == null
+                                    ? '—'
+                                    : '${state.balance}',
+                                style: theme.textTheme.displayLarge,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                state.loggedIn
+                                    ? 'Saldo dari server'
+                                    : 'Belum masuk — masuk untuk melihat saldo',
                                 style: theme.textTheme.bodySmall,
                               ),
                             ],
@@ -134,6 +178,13 @@ class _RewardsPageState extends State<RewardsPage> {
                       decoration: BoxDecoration(
                         color: AppColors.card,
                         borderRadius: BorderRadius.circular(16),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: <Widget>[
@@ -197,6 +248,11 @@ class _RewardsPageState extends State<RewardsPage> {
                   const SizedBox(height: 16),
                   Text('Paket Koin', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 12),
+                  if (state.packages.isEmpty)
+                    const Text(
+                      'Belum ada paket.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
                   for (final package in state.packages)
                     Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -204,6 +260,13 @@ class _RewardsPageState extends State<RewardsPage> {
                       decoration: BoxDecoration(
                         color: AppColors.card,
                         borderRadius: BorderRadius.circular(16),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: <Widget>[

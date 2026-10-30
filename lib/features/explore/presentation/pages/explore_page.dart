@@ -43,7 +43,7 @@ class ExploreView extends StatelessWidget {
             Text('Jelajahi', style: theme.textTheme.titleLarge),
             const SizedBox(height: 4),
             Text(
-              'Cari episode Cinta Sang Penguasa Qin (contoh).',
+              'Cari judul drama atau episode.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
@@ -67,6 +67,32 @@ class ExploreView extends StatelessWidget {
                 )..add(const SeriesListStarted()),
                 child: BlocBuilder<SeriesListBloc, SeriesListState>(
                   builder: (context, seriesState) {
+                    if (seriesState.errorMessage != null) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              seriesState.errorMessage!,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: () => context
+                                  .read<SeriesListBloc>()
+                                  .add(const SeriesListStarted()),
+                              child: const Text('Coba Lagi'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    if (seriesState.isLoading &&
+                        seriesState.series.isEmpty) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
                     if (seriesState.series.isEmpty) {
                       return const Center(
                         child: Text('Belum ada series.'),
@@ -107,6 +133,37 @@ class ExploreView extends StatelessWidget {
             Expanded(
               child: BlocBuilder<ExploreBloc, ExploreState>(
                 builder: (context, state) {
+                  if (state.errorMessage != null) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(Icons.cloud_off, size: 64),
+                            const SizedBox(height: 16),
+                            Text(
+                              state.errorMessage!,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () => context
+                                  .read<ExploreBloc>()
+                                  .add(const ExploreStarted()),
+                              child: const Text('Coba Lagi'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  if (state.isLoading) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
                   if (state.episodes.isEmpty) {
                     return const Center(
                       child: Text('Tidak ada episode yang cocok.'),

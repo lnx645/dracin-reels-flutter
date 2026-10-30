@@ -27,6 +27,11 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "getUpdatesDir" -> {
+                        val dir = File(getExternalFilesDir(null), "updates")
+                        dir.mkdirs()
+                        result.success(dir.absolutePath)
+                    }
                     "installApk" -> {
                         val path = call.arguments as? String
                         if (path.isNullOrEmpty()) {

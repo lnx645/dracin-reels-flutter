@@ -4,7 +4,7 @@ import 'app.dart';
 import 'core/api/api_client.dart';
 import 'core/session/session_cubit.dart';
 import 'features/admin/data/repositories/admin_repository_impl.dart';
-import 'features/feed/data/datasources/sample_episode_datasource.dart';
+import 'features/feed/data/datasources/api_episode_datasource.dart';
 import 'features/feed/data/repositories/episode_repository_impl.dart';
 import 'features/feed/domain/repositories/episode_repository.dart';
 import 'features/series/data/repositories/series_repository_impl.dart';
@@ -21,7 +21,7 @@ void main() {
   final walletBloc = WalletBloc(walletRepository)
     ..add(const WalletStarted());
   final EpisodeRepository repository =
-      EpisodeRepositoryImpl(SampleEpisodeDataSource());
+      EpisodeRepositoryImpl(ApiEpisodeDataSource(apiClient));
   runApp(
     DracinApp(
       repository: repository,

@@ -49,4 +49,23 @@ class ApkInstaller {
       // Abaikan: pengguna masih bisa mengaktifkan izin lewat Pengaturan.
     }
   }
+
+  /// Folder updates/ di folder file eksternal aplikasi (dipakai
+  /// FileProvider saat instal). Dibuat di sisi Android agar Dart tidak
+  /// butuh dependensi path_provider.
+  Future<String> getUpdatesDir() async {
+    final String? path =
+        await _channel.invokeMethod<String>('getUpdatesDir');
+    if (path == null || path.isEmpty) {
+      throw const _UpdatesDirUnavailable();
+    }
+    return path;
+  }
+}
+
+class _UpdatesDirUnavailable implements Exception {
+  const _UpdatesDirUnavailable();
+
+  @override
+  String toString() => 'Folder unduhan tidak tersedia.';
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../admin/presentation/pages/login_page.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/pages/rewards_page.dart';
 import '../bloc/feed_event.dart';
@@ -60,11 +61,14 @@ class FeedTopBar extends StatelessWidget {
                 const Spacer(),
                 BlocBuilder<WalletBloc, WalletState>(
                   builder: (context, wallet) {
+                    final int? balance = wallet.balance;
                     return GestureDetector(
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const RewardsPage(),
+                            builder: (_) => balance == null
+                                ? const LoginPage()
+                                : const RewardsPage(),
                           ),
                         );
                       },
@@ -87,12 +91,10 @@ class FeedTopBar extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              '${wallet.balance} Koin',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
+                              balance == null
+                                  ? 'Masuk'
+                                  : '$balance Koin',
+                              style: Theme.of(context).textTheme.labelMedium,
                             ),
                           ],
                         ),
@@ -160,11 +162,9 @@ class _TabPill extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: active ? Colors.white : AppColors.textSecondary,
-          ),
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: active ? Colors.white : AppColors.textSecondary,
+              ),
         ),
       ),
     );

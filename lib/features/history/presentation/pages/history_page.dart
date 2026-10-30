@@ -25,6 +25,7 @@ class HistoryPage extends StatefulWidget {
 class _HistoryPageState extends State<HistoryPage> {
   List<SeriesEpisode> _unwatched = <SeriesEpisode>[];
   bool _loadingUnwatched = true;
+  bool _unwatchedFailed = false;
 
   @override
   void initState() {
@@ -38,6 +39,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final seriesIds = history.map((item) => item.seriesId).toSet();
     final repository = context.read<SeriesRepository>();
     final unwatched = <SeriesEpisode>[];
+    var failed = false;
     for (final seriesId in seriesIds) {
       try {
         final detail = await repository.getSeriesDetail(seriesId);
@@ -47,7 +49,9 @@ class _HistoryPageState extends State<HistoryPage> {
           }
         }
       } on Exception {
-        // Series yang gagal dimuat dilewati; riwayat tetap tampil.
+        // Series yang gagal dimuat dicatat (bukan disembunyikan):
+        // daftar riwayat tetap tampil + catatan gagal di bawah.
+        failed = true;
         continue;
       }
     }
@@ -64,6 +68,7 @@ class _HistoryPageState extends State<HistoryPage> {
     setState(() {
       _unwatched = unwatched;
       _loadingUnwatched = false;
+      _unwatchedFailed = failed;
     });
   }
 
@@ -80,14 +85,8 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   void _openWatched(HistoryEntry entry) {
-    // Feed sampel hanya berisi series 1 (Qin); series lain dibuka
-    // lewat halaman detailnya.
-    if (entry.seriesId != 1) {
-      _openSeriesDetail(entry.seriesId);
-      return;
-    }
     Navigator.of(context).pop();
-    widget.onOpenEpisode('ep${entry.number}');
+    widget.onOpenEpisode('s${entry.seriesId}e${entry.episodeId}');
   }
 
   void _openSeriesDetail(int seriesId) {
@@ -105,13 +104,9 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   void _openUnwatched(SeriesEpisode episode) {
-    if (!episode.locked && episode.seriesId == 1) {
-      Navigator.of(context).pop();
-      widget.onOpenEpisode('ep${episode.number}');
-      return;
-    }
     if (!episode.locked) {
-      _openSeriesDetail(episode.seriesId);
+      Navigator.of(context).pop();
+      widget.onOpenEpisode('s${episode.seriesId}e${episode.id}');
       return;
     }
     _openSeriesDetail(episode.seriesId);
@@ -126,6 +121,64 @@ class _HistoryPageState extends State<HistoryPage> {
         child: BlocBuilder<WalletBloc, WalletState>(
           builder: (context, state) {
             final history = state.historyItems;
+            if (state.errorMessage != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(Icons.cloud_off, size: 64),
+                      const SizedBox(height: 16),
+                      Text(
+                        state.errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => context
+                            .read<WalletBloc>()
+                            .add(const WalletRefreshed()),
+                        child: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            if (!state.loggedIn) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(Icons.history, size: 64),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Masuk untuk melihat riwayat',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Riwayat tonton tersimpan di server untuk akun '
+                        'Anda.',
+                        style: TextStyle(color: AppColors.textSecondary),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pushNamed('/login');
+                        },
+                        child: const Text('Masuk'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             if (history.isEmpty) {
               return Center(
                 child: Padding(
@@ -183,16 +236,21 @@ class _HistoryPageState extends State<HistoryPage> {
                           : '${episode.coinPrice} koin • Terkunci',
                       onTap: () => _openUnwatched(episode),
                     ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Riwayat tersimpan di perangkat ini. Bila masuk, '
-                  'setiap tontonan juga dikirim ke server '
-                  '(watch-progress). Video belum memutar — posisi '
-                  'lanjut beneran aktif saat pemutar dipasang.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
+                if (_unwatchedFailed)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Sebagian episode lanjutan gagal dimuat dari '
+                      'server.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
                   ),
+                const SizedBox(height: 16),
+                Text(
+                  'Riwayat dari server (akun Anda). Video belum '
+                  'memutar — posisi lanjut beneran aktif saat pemutar '
+                  'dipasang.',
+                  style: theme.textTheme.bodySmall,
                 ),
               ],
             );

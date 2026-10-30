@@ -1,10 +1,13 @@
 /// Entitas dompet & hadiah. Lapisan domain murni.
 class CoinWallet {
-  const CoinWallet({required this.balance, required this.isApiMode});
+  const CoinWallet({required this.balance, required this.loggedIn});
 
-  /// Saldo koin. `isApiMode` true = saldo dari API (login), false = lokal.
-  final int balance;
-  final bool isApiMode;
+  /// Saldo koin dari API. null = belum masuk (tidak ada saldo lokal
+  /// contoh — angka 100 lama sudah dihapus).
+  final int? balance;
+
+  /// True bila ada sesi login (saldo/VIP/riwayat dari API).
+  final bool loggedIn;
 }
 
 /// Paket koin yang dijual (katalog saja; pembelian beneran menyusul).
@@ -104,6 +107,7 @@ class ContinueItem {
     required this.number,
     required this.positionSeconds,
     required this.finished,
+    this.seriesId = 0,
   });
 
   final int episodeId;
@@ -112,8 +116,12 @@ class ContinueItem {
   final int positionSeconds;
   final bool finished;
 
+  /// Id series API pemilik episode (0 = tidak diketahui).
+  final int seriesId;
+
   factory ContinueItem.fromJson(Map<String, dynamic> json) {
     final episode = json['episode'];
+    final series = json['series'];
     final title = json['title'];
     final episodeTitle = episode is Map<String, dynamic>
         ? episode['title']
@@ -124,6 +132,9 @@ class ContinueItem {
     final episodeId = episode is Map<String, dynamic>
         ? episode['id']
         : json['episode_id'];
+    final seriesId = series is Map<String, dynamic>
+        ? series['id']
+        : json['series_id'];
     final position = json['position_seconds'];
     return ContinueItem(
       episodeId: episodeId is int ? episodeId : 0,
@@ -135,6 +146,7 @@ class ContinueItem {
           : (json['number'] is int ? json['number'] as int : 0),
       positionSeconds: position is int ? position : 0,
       finished: json['finished'] is bool ? json['finished'] as bool : false,
+      seriesId: seriesId is int ? seriesId : 0,
     );
   }
 }

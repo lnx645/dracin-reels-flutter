@@ -148,8 +148,45 @@ class HomeSections extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<SeriesListBloc, SeriesListState>(
       builder: (context, state) {
+        if (state.errorMessage != null) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.cloud_off, size: 64),
+                  const SizedBox(height: 16),
+                  Text(
+                    state.errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context
+                        .read<SeriesListBloc>()
+                        .add(const SeriesListStarted()),
+                    child: const Text('Coba Lagi'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (state.isLoading && state.series.isEmpty) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (state.series.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Belum ada series.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
         }
         final all = state.series;
         final trending = List<Series>.from(all)

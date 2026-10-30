@@ -5,9 +5,9 @@ import '../../../../core/session/session_cubit.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../presentation/bloc/wallet_bloc.dart';
 
-/// Layar VIP: paket mingguan/bulanan/tahunan (katalog sampel) +
-/// status VIP. Klaim VIP lewat API adalah sampel tanpa penagihan;
-/// pembelian/langganan beneran BELUM ada dan dinyatakan di sini.
+/// Layar VIP: paket mingguan/bulanan/tahunan dari katalog API +
+/// status VIP. Klaim VIP lewat API belum menagih (pembelian/langganan
+/// beneran BELUM ada dan dinyatakan di sini).
 class VipPage extends StatefulWidget {
   const VipPage({super.key});
 
@@ -79,15 +79,11 @@ class _VipPageState extends State<VipPage> {
                           style: theme.textTheme.bodyMedium,
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Klaim VIP di bawah ini adalah sampel API '
-                          'tanpa penagihan. Langganan berbayar beneran '
-                          '(auto-renew) menyusul bersama backend '
-                          'pembayaran.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textSecondary,
-                          ),
+                        Text(
+                          'Klaim VIP di bawah ini belum menagih. '
+                          'Langganan berbayar beneran (auto-renew) '
+                          'menyusul bersama backend pembayaran.',
+                          style: theme.textTheme.bodySmall,
                         ),
                       ],
                     ),

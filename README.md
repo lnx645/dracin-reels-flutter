@@ -130,3 +130,48 @@ dialog update harus muncul karena Release terbaru lebih baru.
 Ketuk "Update Sekarang", tunggu unduhan, ketuk "Instal" di
 installer sistem. Pengujian end-to-end di HP hanya bisa dilakukan
 di perangkat (bukan dari sandbox).
+
+## Tanpa mock sama sekali (dikunci)
+
+Sejak v0.2.2, aplikasi TIDAK mengandung data mock/sampel/placeholder:
+feed, Jelajahi, detail series, dompet, riwayat, profil, dan bookmark
+hanya menampilkan data API backend yang sebenarnya. File sampel yang
+dihapus: `sample_episode_datasource.dart`, `episode_model.dart`
+(model sampel), `profile_bloc.dart` (statistik dari toggle lokal),
+dan semua fallback sampel di repository series/dompet. Saldo contoh
+100, katalog paket/tugas contoh, dan riwayat lokal sudah dihapus.
+
+Aturan tampilannya:
+- API gagal (jaringan/timeout/non-200) → pesan error ASLI dari
+  request itu + tombol "Coba Lagi" (feed, Jelajahi, detail series,
+  Beranda, bookmark, riwayat, dompet, komentar).
+- API mengembalikan kosong → empty state jujur ("Belum ada data").
+- Belum masuk → endpoint publik API untuk konten yang bisa dibaca
+  anonim (daftar series/episode/paket/tugas); data akun (saldo, VIP,
+  riwayat, bookmark) menampilkan ajakan masuk, bukan angka contoh.
+- Pengiriman progress tonton tetap best-effort di latar belakang
+  (bukan data yang ditampilkan).
+
+## Izin INTERNET (akar masalah login)
+
+`AndroidManifest.xml` WAJIB memuat
+`<uses-permission android:name="android.permission.INTERNET" />`
+(izin normal, otomatis dikabulkan). Tanpa izin ini Android memblokir
+SEMUA akses jaringan aplikasi — inilah kenapa login lama selalu
+"Tidak dapat terhubung" meski server hidup dan cleartext sudah benar.
+Workflow memverifikasi dari APK hasil build (langkah "Verify APK
+permissions" memakai `aapt2 dump badging` dan GAGAL bila INTERNET
+tidak ada) — bukan hanya dari sumber.
+
+## Tipografi & visual (Plus Jakarta Sans)
+
+Skala di `lib/core/theme/app_theme.dart`: judul layar displayLarge
+Bold 26, judul AppBar/kartu titleLarge Bold 22 / titleMedium Bold 20 /
+titleSmall Semibold 17, isi bodyLarge 15 / bodyMedium 14 Regular
+dengan line-height 1.4, label kecil labelMedium Semibold 12 dengan
+tracking 0.2. Spacing konsisten 8/12/16, kartu radius 16 + bayangan
+halus (hitam 25%, blur 12), teks memakai gaya tema (bukan fontSize
+lepas) dengan maxLines + ellipsis sehingga tidak ada teks terpotong
+atau menumpuk. Prioritas polish: layar Dompet & Hadiah/check-in
+(kartu saldo besar + label jelas + bayangan + banner error dengan
+Coba Lagi), lalu Beranda/Feed, Player, detail series, dompet, profil.

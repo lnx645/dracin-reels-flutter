@@ -20,14 +20,17 @@ import '../../../wallet/presentation/widgets/comments_sheet.dart';
 /// membuka halaman ini, bukan memutar inline di kartu.
 /// Jalur yang sama dari semua tempat: feed, "Tonton Semua" (lewat detail
 /// series), detail series, Riwayat/Lanjutkan Nonton — semuanya membuka
-/// halaman ini dengan episodeId yang sama (`ep1`..`ep5`).
+/// halaman ini dengan id episode API (`s{seriesId}e{episodeId}`).
 /// Video masih placeholder (gradasi + judul) sampai pemutar beneran
 /// dipasang — dinyatakan jujur di README, bukan diklaim memutar.
 class PlayerPage extends StatefulWidget {
   const PlayerPage({required this.episodeId, this.seriesId = 1, super.key});
 
-  /// Id sampel feed (`ep1`..`ep5`) sesuai nomor episode.
+  /// Id episode API (`s{seriesId}e{episodeId}`).
   final String episodeId;
+
+  /// Series fallback bila id tidak memuat series (tidak terjadi untuk
+  /// id dari feed/detail/riwayat yang baru).
   final int seriesId;
 
   @override
@@ -36,10 +39,9 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> {
   late String _currentId;
+  late int _seriesId;
   bool _isPlaying = false;
 
-  /// Episode yang dibuka kunci di sesi ini (tidak mengandalkan reload).
-  final Set<int> _localUnlocked = <int>{};
   int? _pendingUnlockId;
   int? _lastUnlockShown;
   String? _lastErrorShown;
@@ -51,6 +53,19 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     _currentId = widget.episodeId;
+    _seriesId = _parseSeriesId(widget.episodeId) ?? widget.seriesId;
+  }
+
+  /// Id `s{seriesId}e{episodeId}` → seriesId; `epN` lama → 1.
+  int? _parseSeriesId(String id) {
+    final RegExpMatch? match = RegExp(r'^s(\d+)e\d+$').firstMatch(id);
+    if (match != null) {
+      return int.tryParse(match.group(1)!);
+    }
+    if (id.startsWith('ep')) {
+      return 1;
+    }
+    return null;
   }
 
   List<Episode> _sortedEpisodes(List<Episode> episodes) {
@@ -70,17 +85,21 @@ class _PlayerPageState extends State<PlayerPage> {
 
   /// Tercatat ke Riwayat + WatchProgress (satu sumber data dengan
   /// "Lanjutkan Nonton"): sekali per episode per sesi player.
-  void _recordCurrent(Episode episode) {
+  /// Judul series dari detail API (bukan default karangan).
+  void _recordCurrent(Episode episode, String seriesTitle) {
     if (_recorded.contains(episode.id)) {
       return;
     }
     _recorded.add(episode.id);
     context.read<WalletBloc>().add(
           WalletContinueSaved(
-            episodeId: episode.number,
+            episodeId: episode.apiEpisodeId > 0
+                ? episode.apiEpisodeId
+                : episode.number,
             title: episode.title,
             number: episode.number,
-            seriesId: widget.seriesId,
+            seriesId: _seriesId,
+            seriesTitle: seriesTitle,
           ),
         );
   }
@@ -88,31 +107,57 @@ class _PlayerPageState extends State<PlayerPage> {
   void _switchTo(String episodeId) {
     setState(() {
       _currentId = episodeId;
+      _seriesId = _parseSeriesId(episodeId) ?? _seriesId;
       _isPlaying = false;
     });
   }
 
-  void _toggleLike(Episode episode) {
+  Future<void> _toggleLike(Episode episode) async {
+    final bool wasLiked = episode.isLiked;
     context.read<FeedBloc>().add(FeedLikeToggled(episode.id));
-    context.read<WalletRepository>().toggleLike(
-          episode.number,
-          !episode.isLiked,
-        );
+    try {
+      await context.read<WalletRepository>().toggleLike(
+            episode.apiEpisodeId > 0 ? episode.apiEpisodeId : episode.number,
+            !wasLiked,
+          );
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      context.read<FeedBloc>().add(FeedLikeToggled(episode.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
-  void _toggleBookmark(Episode episode) {
+  Future<void> _toggleBookmark(Episode episode) async {
+    final bool wasBookmarked = episode.isBookmarked;
     context.read<FeedBloc>().add(FeedBookmarkToggled(episode.id));
-    context.read<WalletRepository>().toggleBookmark(
-          widget.seriesId,
-          !episode.isBookmarked,
-        );
+    try {
+      await context.read<WalletRepository>().toggleBookmark(
+            episode.seriesId,
+            !wasBookmarked,
+          );
+    } on Exception catch (error) {
+      if (!mounted) {
+        return;
+      }
+      context.read<FeedBloc>().add(FeedBookmarkToggled(episode.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
   }
 
   void _showComments(Episode episode) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => CommentsSheet(episodeId: episode.number),
+      builder: (_) => CommentsSheet(
+        episodeId:
+            episode.apiEpisodeId > 0 ? episode.apiEpisodeId : episode.number,
+      ),
     );
   }
 
@@ -210,13 +255,24 @@ class _PlayerPageState extends State<PlayerPage> {
       }
       return;
     }
+    final int? balance = wallet.balance;
+    if (balance == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Saldo tidak dapat dimuat. Coba lagi.'),
+          ),
+        );
+      }
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('Buka Episode ${detail.number}?'),
         content: Text(
           '${detail.title}\n\nHarga: ${detail.coinPrice} koin. '
-          'Saldo Anda: ${wallet.balance} koin.',
+          'Saldo Anda: $balance koin.',
         ),
         actions: <Widget>[
           TextButton(
@@ -233,7 +289,7 @@ class _PlayerPageState extends State<PlayerPage> {
     if (confirmed != true || !mounted) {
       return;
     }
-    if (wallet.balance < detail.coinPrice) {
+    if (balance < detail.coinPrice) {
       if (!mounted) {
         return;
       }
@@ -243,7 +299,7 @@ class _PlayerPageState extends State<PlayerPage> {
           title: const Text('Koin tidak cukup'),
           content: Text(
             'Harga ${detail.coinPrice} koin, saldo Anda '
-            '${wallet.balance} koin. Klaim check-in harian untuk '
+            '$balance koin. Klaim check-in harian untuk '
             'menambah koin.',
           ),
           actions: <Widget>[
@@ -436,13 +492,10 @@ class _PlayerPageState extends State<PlayerPage> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Video belum memutar (UI saja). Area video di atas masih '
             'placeholder sampai pemutar beneran dipasang.',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
@@ -455,8 +508,9 @@ class _PlayerPageState extends State<PlayerPage> {
     // dari halaman Hadiah setelah klaim), bukan hanya saat feed berubah.
     final wallet = context.watch<WalletBloc>().state;
     return BlocProvider(
+      key: ValueKey<int>(_seriesId),
       create: (_) => SeriesDetailBloc(context.read<SeriesRepository>())
-        ..add(SeriesDetailStarted(widget.seriesId)),
+        ..add(SeriesDetailStarted(_seriesId)),
       child: BlocListener<WalletBloc, WalletState>(
         listener: (context, state) {
           final unlockedId = state.lastUnlockedId;
@@ -465,9 +519,13 @@ class _PlayerPageState extends State<PlayerPage> {
               _lastUnlockShown != unlockedId) {
             _lastUnlockShown = unlockedId;
             setState(() {
-              _localUnlocked.add(unlockedId!);
               _pendingUnlockId = null;
             });
+            // Status kunci dibaca ulang dari server (bukan ditandai
+            // lokal): bila server masih mengunci, gembok tetap tampil.
+            context.read<SeriesDetailBloc>().add(
+                  SeriesDetailStarted(_seriesId),
+                );
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Episode terbuka!')),
             );
@@ -501,6 +559,43 @@ class _PlayerPageState extends State<PlayerPage> {
                 index < episodes.length - 1 ? episodes[index + 1] : null;
             return BlocBuilder<SeriesDetailBloc, SeriesDetailState>(
               builder: (context, detailState) {
+                // Status kunci tidak bisa diverifikasi bila detail gagal
+                // dimuat — jangan diam-diam memutar episode yang mungkin
+                // terkunci: tampilkan error asli + Coba Lagi.
+                if (detailState.errorMessage != null &&
+                    detailState.detail == null) {
+                  return Scaffold(
+                    appBar: AppBar(
+                      title: Text('Episode ${episode.number}'),
+                    ),
+                    body: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(Icons.cloud_off, size: 64),
+                            const SizedBox(height: 16),
+                            Text(
+                              detailState.errorMessage!,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () => context
+                                  .read<SeriesDetailBloc>()
+                                  .add(
+                                    SeriesDetailStarted(_seriesId),
+                                  ),
+                              child: const Text('Coba Lagi'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
                 final detailByNumber = <int, SeriesEpisode>{
                   for (final item
                       in detailState.detail?.episodes ?? <SeriesEpisode>[])
@@ -509,15 +604,17 @@ class _PlayerPageState extends State<PlayerPage> {
                 final detail = detailByNumber[episode.number];
                 final locked = detail != null &&
                     detail.locked &&
-                    !_localUnlocked.contains(detail.id) &&
                     !wallet.vip.isActive;
                 final lockedDetail = locked ? detail : null;
                 // Tercatat ke riwayat saat episode terbuka untuk ditonton
-                // (bukan saat masih terkunci di balik gembok).
-                if (!locked) {
+                // (bukan saat masih terkunci di balik gembok) dan hanya
+                // bila detail series dari API tersedia (judul series
+                // harus dari server, bukan default karangan).
+                final seriesTitle = detailState.detail?.series.title;
+                if (!locked && seriesTitle != null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
-                      _recordCurrent(episode);
+                      _recordCurrent(episode, seriesTitle);
                     }
                   });
                 }

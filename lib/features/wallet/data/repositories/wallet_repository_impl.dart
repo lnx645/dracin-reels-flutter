@@ -1,16 +1,19 @@
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../../../core/api/api_client.dart';
+import '../../../series/domain/entities/series.dart';
 import '../../domain/entities/history.dart';
 import '../../domain/entities/wallet.dart';
 import '../../domain/repositories/wallet_repository.dart';
 
-/// Repository dompet dua mode:
-/// - Ada token → API beneran (saldo, check-in, unlock, VIP, progress).
-/// - Tanpa token → dompet lokal (saldo awal 100, check-in 1x/hari,
-///   unlock lokal). Mode ditandai di [CoinWallet.isApiMode] agar UI jujur.
+/// Repository dompet API-only.
+///
+/// - Tanpa token → metode yang butuh login melempar ApiException
+///   'Masuk dulu...' (UI menampilkan ajakan masuk, bukan data contoh).
+/// - API gagal → exception diteruskan, TIDAK ada fallback lokal.
+/// - Katalog publik (paket koin, tugas) memakai endpoint publik API.
+/// - Riwayat dari /continue-watching API (login) — tidak ada simpanan
+///   lokal lagi. Pengiriman progress tetap best-effort di latar
+///   belakang (bukan data yang ditampilkan, jadi gagal kirim tidak
+///   menampilkan apa pun yang palsu).
 class WalletRepositoryImpl implements WalletRepository {
   WalletRepositoryImpl(this._api, {required this.tokenProvider});
 
@@ -19,265 +22,162 @@ class WalletRepositoryImpl implements WalletRepository {
   /// Mengembalikan token sesi saat ini, atau null bila belum masuk.
   final String? Function() tokenProvider;
 
-  static const _keyBalance = 'local_wallet_balance';
-  static const _keyUnlocked = 'local_unlocked_episodes';
-  static const _keyCheckinDate = 'local_checkin_date';
-  static const _keyHistory = 'watch_history_json';
-
   bool get _hasToken {
     final token = tokenProvider();
     return token != null && token.isNotEmpty;
   }
 
-  String _today() {
-    final now = DateTime.now();
-    final month = now.month.toString().padLeft(2, '0');
-    final day = now.day.toString().padLeft(2, '0');
-    return '${now.year}-$month-$day';
-  }
+  @override
+  bool get hasSession => _hasToken;
 
-  Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+  void _requireSession(String action) {
+    if (!_hasToken) {
+      throw ApiException('Masuk dulu untuk $action.');
+    }
+  }
 
   @override
   Future<CoinWallet> getBalance() async {
-    if (_hasToken) {
-      try {
-        final data = await _api.getJson('/wallet');
-        if (data is Map<String, dynamic> &&
-            data['balance'] is int) {
-          return CoinWallet(
-            balance: data['balance'] as int,
-            isApiMode: true,
-          );
-        }
-      } on ApiException {
-        // Jatuh ke lokal bila API gagal dijangkau.
-      }
+    _requireSession('melihat saldo');
+    final data = await _api.getJson('/wallet');
+    if (data is Map<String, dynamic> && data['balance'] is int) {
+      return CoinWallet(
+        balance: data['balance'] as int,
+        loggedIn: true,
+      );
     }
-    final prefs = await _prefs;
-    return CoinWallet(
-      balance: prefs.getInt(_keyBalance) ?? 100,
-      isApiMode: false,
-    );
+    throw const ApiException('Format saldo tidak dikenali.');
   }
 
   @override
   Future<int> checkin() async {
-    if (_hasToken) {
-      final data = await _api.postJson('/checkin', <String, dynamic>{});
-      // Bentuk respons dipertahankan longgar: saldo baru / hadiah.
-      if (data is Map<String, dynamic>) {
-        final balance = data['balance'] ?? data['new_balance'];
-        if (balance is int) {
-          return balance;
-        }
-        final reward = data['coin_reward'] ?? data['reward'];
-        if (reward is int) {
-          final wallet = await getBalance();
-          return wallet.balance;
-        }
+    _requireSession('check-in');
+    final data = await _api.postJson('/checkin', <String, dynamic>{});
+    if (data is Map<String, dynamic>) {
+      final balance = data['balance'] ?? data['new_balance'];
+      if (balance is int) {
+        return balance;
       }
-      final wallet = await getBalance();
-      return wallet.balance;
+      final reward = data['coin_reward'] ?? data['reward'];
+      if (reward is int) {
+        final wallet = await getBalance();
+        return wallet.balance ?? 0;
+      }
     }
-    final prefs = await _prefs;
-    if (prefs.getString(_keyCheckinDate) == _today()) {
-      throw const ApiException('Check-in hari ini sudah diklaim.');
-    }
-    final balance = (prefs.getInt(_keyBalance) ?? 100) + 10;
-    await prefs.setInt(_keyBalance, balance);
-    await prefs.setString(_keyCheckinDate, _today());
-    return balance;
+    final wallet = await getBalance();
+    return wallet.balance ?? 0;
   }
 
   @override
   Future<void> unlockEpisode(int episodeId) async {
-    if (_hasToken) {
-      await _api.postJson('/unlock', <String, dynamic>{
-        'episode_id': episodeId,
-      });
-      return;
-    }
-    final prefs = await _prefs;
-    final unlocked = prefs.getStringList(_keyUnlocked) ?? <String>[];
-    final key = '$episodeId';
-    if (!unlocked.contains(key)) {
-      unlocked.add(key);
-      await prefs.setStringList(_keyUnlocked, unlocked);
-    }
-  }
-
-  /// Harga koin episode dikurangi dari dompet lokal (mode tanpa login).
-  /// Dipanggil UI setelah cek harga; API memakai potongan server.
-  Future<void> deductLocal(int amount) async {
-    final prefs = await _prefs;
-    final balance = (prefs.getInt(_keyBalance) ?? 100) - amount;
-    await prefs.setInt(_keyBalance, balance < 0 ? 0 : balance);
-  }
-
-  Future<Set<int>> getLocalUnlocked() async {
-    final prefs = await _prefs;
-    final list = prefs.getStringList(_keyUnlocked) ?? <String>[];
-    return list.map(int.tryParse).whereType<int>().toSet();
+    _requireSession('membuka episode');
+    await _api.postJson('/unlock', <String, dynamic>{
+      'episode_id': episodeId,
+    });
   }
 
   @override
   Future<VipInfo> getVip() async {
-    if (_hasToken) {
-      try {
-        final data = await _api.getJson('/vip');
-        return VipInfo.fromJson(data);
-      } on ApiException {
-        return const VipInfo(isActive: false);
-      }
+    if (!_hasToken) {
+      // Tanpa akun tidak ada VIP — ini fakta, bukan data contoh.
+      return const VipInfo(isActive: false);
     }
-    return const VipInfo(isActive: false);
+    final data = await _api.getJson('/vip');
+    return VipInfo.fromJson(data);
   }
 
   @override
   Future<void> claimVip(String plan) async {
-    if (!_hasToken) {
-      throw const ApiException(
-        'Masuk dulu untuk mengklaim VIP (mode sampel).',
-      );
-    }
+    _requireSession('mengklaim VIP');
     await _api.postJson('/vip/claim', <String, dynamic>{'plan': plan});
   }
 
   @override
   Future<List<CoinPackage>> getPackages() async {
-    try {
-      final data = await _api.getJson('/coin-packages');
-      if (data is List) {
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(CoinPackage.fromJson)
-            .toList();
-      }
-    } on ApiException {
-      // Katalog sampel di bawah.
+    final data = await _api.getJson('/coin-packages');
+    if (data is List) {
+      return data
+          .whereType<Map<String, dynamic>>()
+          .map(CoinPackage.fromJson)
+          .toList();
     }
-    return const <CoinPackage>[
-      CoinPackage(
-        id: 1,
-        name: 'Paket 100 Koin',
-        coinAmount: 100,
-        priceIdr: 15000,
-        bonusCoins: 0,
-      ),
-      CoinPackage(
-        id: 2,
-        name: 'Paket 550 Koin',
-        coinAmount: 550,
-        priceIdr: 75000,
-        bonusCoins: 50,
-      ),
-      CoinPackage(
-        id: 3,
-        name: 'Paket 1200 Koin',
-        coinAmount: 1200,
-        priceIdr: 150000,
-        bonusCoins: 200,
-      ),
-      CoinPackage(
-        id: 4,
-        name: 'Paket 3000 Koin',
-        coinAmount: 3000,
-        priceIdr: 350000,
-        bonusCoins: 700,
-      ),
-    ];
+    throw const ApiException('Format paket koin tidak dikenali.');
   }
 
   @override
   Future<List<RewardTask>> getTasks() async {
-    try {
-      final data = await _api.getJson('/rewards/tasks');
-      if (data is List) {
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(RewardTask.fromJson)
-            .toList();
-      }
-    } on ApiException {
-      // Katalog sampel di bawah.
+    final data = await _api.getJson('/rewards/tasks');
+    if (data is List) {
+      return data
+          .whereType<Map<String, dynamic>>()
+          .map(RewardTask.fromJson)
+          .toList();
     }
-    return const <RewardTask>[
-      RewardTask(
-        id: 1,
-        name: 'Check-in Harian',
-        type: 'checkin',
-        coinReward: 10,
-        dailyLimit: 1,
-      ),
-      RewardTask(
-        id: 2,
-        name: 'Tonton Iklan',
-        type: 'watch_ad',
-        coinReward: 5,
-        dailyLimit: 5,
-      ),
-      RewardTask(
-        id: 3,
-        name: 'Selesaikan Satu Series',
-        type: 'finish_series',
-        coinReward: 50,
-        dailyLimit: 1,
-      ),
-    ];
+    throw const ApiException('Format tugas tidak dikenali.');
   }
 
   @override
   Future<void> recordWatch(HistoryEntry entry) async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_keyHistory);
-    final entries = <HistoryEntry>[];
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is List) {
-          for (final item in decoded) {
-            if (item is Map<String, dynamic>) {
-              entries.add(HistoryEntry.fromJson(item));
-            }
-          }
-        }
-      } on Exception {
-        // Riwayat korup: mulai ulang dari entri baru.
-        entries.clear();
-      }
-    }
-    entries.removeWhere((item) => item.episodeId == entry.episodeId);
-    entries.insert(0, entry);
-    final trimmed = entries.length > 100 ? entries.sublist(0, 100) : entries;
-    await prefs.setString(
-      _keyHistory,
-      jsonEncode(trimmed.map((item) => item.toJson()).toList()),
-    );
     await putProgress(entry.episodeId, entry.positionSeconds);
   }
 
   @override
   Future<List<HistoryEntry>> getHistory() async {
-    final prefs = await _prefs;
-    final raw = prefs.getString(_keyHistory);
-    if (raw == null || raw.isEmpty) {
+    if (!_hasToken) {
       return <HistoryEntry>[];
     }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) {
-        return <HistoryEntry>[];
-      }
-      final entries = decoded
-          .whereType<Map<String, dynamic>>()
-          .map(HistoryEntry.fromJson)
-          .toList();
-      entries.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
-      return entries;
-    } on Exception {
-      return <HistoryEntry>[];
+    final data = await _api.getJson('/continue-watching');
+    if (data is! List) {
+      throw const ApiException('Format riwayat tidak dikenali.');
     }
+    final entries = data
+        .whereType<Map<String, dynamic>>()
+        .map(_historyEntryFromProgress)
+        .toList();
+    entries.sort((a, b) => b.updatedAtMs.compareTo(a.updatedAtMs));
+    return entries;
+  }
+
+  HistoryEntry _historyEntryFromProgress(Map<String, dynamic> json) {
+    final dynamic episode = json['episode'];
+    final dynamic series = json['series'];
+    final int episodeId = json['episode_id'] is int
+        ? json['episode_id'] as int
+        : (episode is Map<String, dynamic> && episode['id'] is int
+            ? episode['id'] as int
+            : 0);
+    final int seriesId = series is Map<String, dynamic> &&
+            series['id'] is int
+        ? series['id'] as int
+        : 0;
+    final String seriesTitle = series is Map<String, dynamic> &&
+            series['title'] is String
+        ? series['title'] as String
+        : 'Series';
+    final String title = episode is Map<String, dynamic> &&
+            episode['title'] is String
+        ? episode['title'] as String
+        : 'Episode';
+    final int number = episode is Map<String, dynamic> &&
+            episode['number'] is int
+        ? episode['number'] as int
+        : 0;
+    final int position = json['position_seconds'] is int
+        ? json['position_seconds'] as int
+        : 0;
+    final DateTime? watchedAt = json['last_watched_at'] is String
+        ? DateTime.tryParse(json['last_watched_at'] as String)
+        : null;
+    return HistoryEntry(
+      episodeId: episodeId,
+      seriesId: seriesId,
+      seriesTitle: seriesTitle,
+      title: title,
+      number: number,
+      positionSeconds: position,
+      finished: json['finished'] is bool ? json['finished'] as bool : false,
+      updatedAtMs: watchedAt?.millisecondsSinceEpoch ?? 0,
+    );
   }
 
   @override
@@ -292,31 +192,26 @@ class WalletRepositoryImpl implements WalletRepository {
         'finished': false,
       });
     } on ApiException {
-      // Progress adalah best-effort: gagal kirim tidak mengganggu nonton.
+      // Pengiriman progress latar belakang: gagal kirim tidak
+      // menampilkan data palsu dan tidak mengganggu nonton.
     }
   }
 
   @override
   Future<List<EpisodeComment>> getComments(int episodeId) async {
-    try {
-      final data = await _api.getJson('/episodes/$episodeId/comments');
-      if (data is List) {
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(EpisodeComment.fromJson)
-            .toList();
-      }
-    } on ApiException {
-      // Komentar kosong bila API tidak terjangkau.
+    final data = await _api.getJson('/episodes/$episodeId/comments');
+    if (data is List) {
+      return data
+          .whereType<Map<String, dynamic>>()
+          .map(EpisodeComment.fromJson)
+          .toList();
     }
-    return <EpisodeComment>[];
+    throw const ApiException('Format komentar tidak dikenali.');
   }
 
   @override
   Future<void> postComment(int episodeId, String content) async {
-    if (!_hasToken) {
-      throw const ApiException('Masuk dulu untuk menulis komentar.');
-    }
+    _requireSession('menulis komentar');
     await _api.postJson('/episodes/$episodeId/comments', <String, dynamic>{
       'content': content,
     });
@@ -324,33 +219,40 @@ class WalletRepositoryImpl implements WalletRepository {
 
   @override
   Future<void> toggleLike(int episodeId, bool liked) async {
-    if (!_hasToken) {
-      return;
-    }
-    try {
-      if (liked) {
-        await _api.postJson('/likes/$episodeId', <String, dynamic>{});
-      } else {
-        await _api.delete('/likes/$episodeId');
-      }
-    } on ApiException {
-      // Suka lokal tetap jalan; sinkronisasi API best-effort.
+    _requireSession('menyukai episode');
+    if (liked) {
+      await _api.postJson('/likes/$episodeId', <String, dynamic>{});
+    } else {
+      await _api.delete('/likes/$episodeId');
     }
   }
 
   @override
   Future<void> toggleBookmark(int seriesId, bool bookmarked) async {
-    if (!_hasToken) {
-      return;
+    _requireSession('menyimpan bookmark');
+    if (bookmarked) {
+      await _api.postJson('/bookmarks/$seriesId', <String, dynamic>{});
+    } else {
+      await _api.delete('/bookmarks/$seriesId');
     }
-    try {
-      if (bookmarked) {
-        await _api.postJson('/bookmarks/$seriesId', <String, dynamic>{});
-      } else {
-        await _api.delete('/bookmarks/$seriesId');
-      }
-    } on ApiException {
-      // Bookmark lokal tetap jalan; sinkronisasi API best-effort.
+  }
+
+  @override
+  Future<List<Series>> getBookmarks() async {
+    _requireSession('melihat bookmark');
+    final data = await _api.getJson('/bookmarks');
+    if (data is! List) {
+      throw const ApiException('Format bookmark tidak dikenali.');
     }
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(Series.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<void> removeBookmark(int seriesId) async {
+    _requireSession('menghapus bookmark');
+    await _api.delete('/bookmarks/$seriesId');
   }
 }

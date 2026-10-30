@@ -1,30 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../feed/domain/entities/episode.dart';
-import '../../../feed/domain/repositories/episode_repository.dart';
+import '../../../admin/presentation/pages/login_page.dart';
+import '../../../series/domain/entities/series.dart';
+import '../../../wallet/domain/repositories/wallet_repository.dart';
 import '../bloc/bookmark_bloc.dart';
 
 class BookmarkPage extends StatelessWidget {
-  const BookmarkPage({this.onOpenEpisode, super.key});
+  const BookmarkPage({required this.onOpenSeries, super.key});
 
-  final void Function(String episodeId)? onOpenEpisode;
+  /// Ketuk series → buka halaman detail series itu.
+  final void Function(int seriesId) onOpenSeries;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => BookmarkBloc(
-        context.read<EpisodeRepository>(),
+        context.read<WalletRepository>(),
       )..add(const BookmarkStarted()),
-      child: BookmarkView(onOpenEpisode: onOpenEpisode),
+      child: BookmarkView(onOpenSeries: onOpenSeries),
     );
   }
 }
 
 class BookmarkView extends StatelessWidget {
-  const BookmarkView({this.onOpenEpisode, super.key});
+  const BookmarkView({required this.onOpenSeries, super.key});
 
-  final void Function(String episodeId)? onOpenEpisode;
+  final void Function(int seriesId) onOpenSeries;
 
   @override
   Widget build(BuildContext context) {
@@ -32,21 +34,61 @@ class BookmarkView extends StatelessWidget {
       appBar: AppBar(title: const Text('Bookmark')),
       body: BlocBuilder<BookmarkBloc, BookmarkState>(
         builder: (context, state) {
-          if (state.episodes.isEmpty) {
+          if (state.errorMessage != null) {
+            final bool needsLogin =
+                state.errorMessage!.contains('Masuk dulu');
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: const <Widget>[
+                  children: <Widget>[
+                    const Icon(Icons.cloud_off, size: 64),
+                    const SizedBox(height: 16),
+                    Text(
+                      state.errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    if (needsLogin)
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const LoginPage(),
+                            ),
+                          );
+                        },
+                        child: const Text('Masuk'),
+                      )
+                    else
+                      ElevatedButton(
+                        onPressed: () => context
+                            .read<BookmarkBloc>()
+                            .add(const BookmarkStarted()),
+                        child: const Text('Coba Lagi'),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (state.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (state.series.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
                     Icon(Icons.bookmark_outline, size: 64),
                     SizedBox(height: 16),
                     Text(
-                      'Belum ada episode tersimpan.',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      'Belum ada series tersimpan.',
+                      style: Theme.of(context).textTheme.titleMedium,
                       textAlign: TextAlign.center,
                     ),
                     SizedBox(height: 8),
@@ -60,17 +102,15 @@ class BookmarkView extends StatelessWidget {
             );
           }
           return ListView.builder(
-            itemCount: state.episodes.length,
+            itemCount: state.series.length,
             itemBuilder: (context, index) {
-              final episode = state.episodes[index];
+              final series = state.series[index];
               return _BookmarkTile(
-                episode: episode,
-                onOpen: onOpenEpisode == null
-                    ? null
-                    : () => onOpenEpisode!(episode.id),
-                onRemove: () => context
-                    .read<BookmarkBloc>()
-                    .add(BookmarkRemoved(episode.id)),
+                series: series,
+                onOpen: () => onOpenSeries(series.id),
+                onRemove: () => context.read<BookmarkBloc>().add(
+                      BookmarkRemoved(series.id),
+                    ),
               );
             },
           );
@@ -82,14 +122,14 @@ class BookmarkView extends StatelessWidget {
 
 class _BookmarkTile extends StatelessWidget {
   const _BookmarkTile({
-    required this.episode,
+    required this.series,
     required this.onRemove,
-    this.onOpen,
+    required this.onOpen,
   });
 
-  final Episode episode;
+  final Series series;
   final VoidCallback onRemove;
-  final VoidCallback? onOpen;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -98,22 +138,18 @@ class _BookmarkTile extends StatelessWidget {
         width: 64,
         height: 48,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: episode.gradient.map(Color.new).toList(),
-          ),
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Icon(Icons.play_arrow, color: Colors.white),
       ),
       title: Text(
-        'Episode ${episode.number} - ${episode.title}',
+        series.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        episode.description,
+        series.description,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -121,8 +157,7 @@ class _BookmarkTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           TextButton(onPressed: onRemove, child: const Text('Hapus')),
-          if (onOpen != null)
-            TextButton(onPressed: onOpen, child: const Text('Buka')),
+          TextButton(onPressed: onOpen, child: const Text('Buka')),
         ],
       ),
     );
