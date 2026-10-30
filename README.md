@@ -3,6 +3,24 @@
 Aplikasi reels video pendek ala TikTok, ditulis ulang dengan Flutter
 (menggantikan versi Rust/egui yang diparkir — repo Rust tidak dihapus).
 
+## Status jujur v0.2.6
+
+- **Tombol "Periksa Update" di Profil** (di bawah label versi): cek
+  paksa SEKARANG tanpa peduli jeda 24 jam cek otomatis — perbaikan
+  keluhan "aplikasi terinstal kok gak ada dialog update" (cek otomatis
+  hanya sekali sehari; rilis baru sesudah cek terakhir tidak memunculkan
+  dialog sampai cek berikutnya). Status jelas: Memeriksa… / dialog
+  update bila tersedia / "Sudah versi terbaru." / gagal → snackbar.
+  Cek otomatis cold start tetap jalan. Waktu cek kini dicatat hanya
+  bila request berhasil (cek gagal tidak membakar jatah 24 jam).
+  Token/define updater tidak diubah.
+- **Chip genre satu baris geser di Jelajahi:** Semua + tiap genre +
+  pemisah + Peringkat/Baru Tayang dalam satu baris horizontal yang
+  bisa digeser (tanpa wrap, tanpa chip yatim). Terpilih = oranye +
+  teks putih tebal; tidak terpilih = permukaan gelap + garis tepi
+  halus + teks terang; padding + radius konsisten. Chip detail series
+  memakai gaya visual yang sama (statis).
+
 ## Status jujur v0.2.5
 
 - **Pola Jelajahi (layout referensi, bukan salinan konten/merek):**

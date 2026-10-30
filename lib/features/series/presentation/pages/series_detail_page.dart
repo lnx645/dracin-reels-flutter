@@ -6,6 +6,7 @@ import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../domain/entities/series.dart';
 import '../../domain/repositories/series_repository.dart';
 import '../bloc/series_bloc.dart';
+import '../widgets/filter_chip.dart';
 import 'series_detail_widgets.dart';
 
 /// Halaman detail series ala aplikasi drama profesional:
@@ -261,7 +262,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                         runSpacing: 8,
                         children: series.genres
                             .map(
-                              (genre) => Chip(label: Text(genre.name)),
+                              (genre) =>
+                                  SeriesDisplayChip(label: genre.name),
                             )
                             .toList(),
                       ),

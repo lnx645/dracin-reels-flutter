@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/domain/repositories/series_repository.dart';
 import '../../../series/presentation/bloc/series_bloc.dart';
 import '../../../series/presentation/pages/series_detail_page.dart';
+import '../../../series/presentation/widgets/filter_chip.dart';
 import '../../../wallet/domain/entities/history.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 
 /// Halaman Jelajahi — POLA LAYOUT yang dikunci (bukan salinan konten
 /// atau merek aplikasi referensi):
 /// - Bilah pencarian di atas: kolom + tombol "Cari".
-/// - Baris filter: "Kategori" (pemilih genre → ?genre_id=),
-///   "Peringkat" (rating tertinggi dulu), "Baru Tayang" (terbaru dulu).
+/// - Baris filter SATU BARIS GESER: chip genre terlihat langsung
+///   (Semua + tiap genre → ?genre_id=), pemisah, chip urutan
+///   Peringkat / Baru Tayang. Tanpa wrap, tanpa chip yatim.
 ///   API belum punya param urut → urut sisi klien, dilaporkan jujur.
 /// - Grid poster 2 kolom gaya masonry: cover, judul, baris
 ///   "Genre | N episode"; ketuk → detail series.
@@ -65,51 +68,6 @@ class _ExploreViewState extends State<ExploreView> {
         );
   }
 
-  void _pickGenre(BuildContext context, SeriesListState seriesState) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        if (seriesState.genres.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text('Belum ada genre dari server.'),
-          );
-        }
-        return ListView(
-          shrinkWrap: true,
-          children: <Widget>[
-            ListTile(
-              title: const Text('Semua'),
-              trailing: seriesState.selectedGenreId == null
-                  ? const Icon(Icons.check)
-                  : null,
-              onTap: () {
-                context
-                    .read<SeriesListBloc>()
-                    .add(const SeriesListGenreChanged(null));
-                Navigator.of(sheetContext).pop();
-              },
-            ),
-            ...seriesState.genres.map(
-              (genre) => ListTile(
-                title: Text(genre.name),
-                trailing: seriesState.selectedGenreId == genre.id
-                    ? const Icon(Icons.check)
-                    : null,
-                onTap: () {
-                  context
-                      .read<SeriesListBloc>()
-                      .add(SeriesListGenreChanged(genre.id));
-                  Navigator.of(sheetContext).pop();
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -152,46 +110,58 @@ class _ExploreViewState extends State<ExploreView> {
                 ],
               ),
               const SizedBox(height: 12),
-              // (2) Baris filter: Kategori (pemilih) + 2 urutan.
+              // Baris filter SATU BARIS GESER (bukan wrap): chip genre
+              // terlihat langsung (Semua + tiap genre) + pemisah +
+              // chip urutan. Tidak boleh ada chip yatim di baris kedua
+              // — baris ini SingleChildScrollView horizontal.
               BlocBuilder<SeriesListBloc, SeriesListState>(
                 builder: (context, seriesState) {
-                  Genre? selectedGenre;
-                  for (final genre in seriesState.genres) {
-                    if (genre.id == seriesState.selectedGenreId) {
-                      selectedGenre = genre;
-                      break;
-                    }
-                  }
                   return SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: <Widget>[
-                        ChoiceChip(
-                          label: Text(
-                            selectedGenre?.name ?? 'Kategori',
-                          ),
-                          selected: seriesState.selectedGenreId != null,
-                          onSelected: (_) =>
-                              _pickGenre(context, seriesState),
-                          avatar: const Icon(
-                            Icons.category_outlined,
-                            size: 18,
+                        SeriesFilterChip(
+                          label: 'Semua',
+                          selected: seriesState.selectedGenreId == null,
+                          onSelected: () => context
+                              .read<SeriesListBloc>()
+                              .add(const SeriesListGenreChanged(null)),
+                        ),
+                        ...seriesState.genres.map(
+                          (genre) => Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: SeriesFilterChip(
+                              label: genre.name,
+                              selected:
+                                  seriesState.selectedGenreId == genre.id,
+                              onSelected: () => context
+                                  .read<SeriesListBloc>()
+                                  .add(
+                                    SeriesListGenreChanged(genre.id),
+                                  ),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Peringkat'),
+                        Container(
+                          width: 1,
+                          height: 24,
+                          color: AppColors.border,
+                        ),
+                        const SizedBox(width: 8),
+                        SeriesFilterChip(
+                          label: 'Peringkat',
                           selected:
                               seriesState.sort == SeriesSort.rating,
-                          onSelected: (_) =>
+                          onSelected: () =>
                               _toggleSort(SeriesSort.rating),
                         ),
                         const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Baru Tayang'),
+                        SeriesFilterChip(
+                          label: 'Baru Tayang',
                           selected:
                               seriesState.sort == SeriesSort.newest,
-                          onSelected: (_) =>
+                          onSelected: () =>
                               _toggleSort(SeriesSort.newest),
                         ),
                       ],
