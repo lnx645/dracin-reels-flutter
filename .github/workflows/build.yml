@@ -1,0 +1,42 @@
+name: Build and Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter build apk --release
+      - name: Verify APK
+        run: ls -lh build/app/outputs/flutter-apk/app-release.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dracin-reels-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Publish Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk dracin-reels.apk
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            gh release upload v0.1.0 dracin-reels.apk --clobber
+          else
+            gh release create v0.1.0 dracin-reels.apk --title "v0.1.0" --notes "Dracin Reels Flutter - UI saja, video belum memutar."
+          fi
