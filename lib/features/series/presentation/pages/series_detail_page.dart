@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/session/session_cubit.dart';
-import '../../../../core/theme/app_theme.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../domain/entities/series.dart';
 import '../../domain/repositories/series_repository.dart';

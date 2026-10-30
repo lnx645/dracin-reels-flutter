@@ -1,6 +1,6 @@
 import '../entities/history.dart';
 import '../entities/wallet.dart';
-import '../../series/domain/entities/series.dart';
+import '../../../series/domain/entities/series.dart';
 
 /// Kontrak repository dompet: HANYA API.
 ///
