@@ -74,6 +74,8 @@ class VideoPlayerArea extends StatefulWidget {
     this.prewarmed,
     this.title = '',
     this.onRequestClose,
+    this.onBackgroundTap,
+    this.showCenterButton = true,
     super.key,
   });
 
@@ -151,8 +153,22 @@ class VideoPlayerArea extends StatefulWidget {
 
   /// Status putar yang diminta tombol Putar/Jeda di luar area video
   /// (true = putar, false = jeda). Perubahan di sini memutar/menjeda
-  /// controller; perubahan dari controller sendiri (mis. ketuk video)
-  /// dilaporkan balik lewat [onPlayingChanged].
+  /// controller; perubahan dari controller sendiri (mis. tombol
+  /// tengah) dilaporkan balik lewat [onPlayingChanged].
+
+  /// Ketuk area video (aturan baru uwa, menggantikan "ketuk =
+  /// putar/jeda"): bila diisi, ketuk area HANYA memanggil ini
+  /// (Player: tampil/sembunyi chrome) dan TIDAK PERNAH mengubah
+  /// status putar. Bila null (pratinjau formulir — tidak punya
+  /// chrome), ketuk area tetap memutar/menjeda seperti dulu.
+  final VoidCallback? onBackgroundTap;
+
+  /// Tombol tengah tampil atau tidak. Player mengisinya dengan
+  /// visibilitas chrome (tombol tengah = bagian chrome: saat jeda,
+  /// induk memaksa chrome terlihat, jadi tombol play selalu tersedia
+  /// saat jeda; saat diputar + chrome tersembunyi, video bersih
+  /// tanpa tombol). Pratinjau formulir: selalu true (default).
+  final bool showCenterButton;
   final ValueNotifier<bool> playRequest;
 
   /// Dipanggil setiap kali status putar controller benar-benar berubah.
@@ -825,32 +841,45 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
                     const SizedBox.shrink(),
               ),
             ),
+          // Zona ketuk video: HANYA onBackgroundTap induk (Player:
+          // tampil/sembunyi chrome) — TIDAK PERNAH _togglePlay bila
+          // callback diisi. Lapisan ini kosong (tanpa ikon) supaya
+          // ketuk di mana pun di video tidak mengubah status putar.
           Positioned.fill(
             child: GestureDetector(
-              onTap: _togglePlay,
+              onTap: widget.onBackgroundTap ?? _togglePlay,
               behavior: HitTestBehavior.translucent,
-              child: Center(
-                // Ikon play BESAR transparan tepat di tengah video
-                // saat pause (pola referensi) — TIDAK PERNAH saat
-                // sedang retry jaringan (chip retry yang tampil).
-                child: controller.value.isPlaying ||
-                        _retryStatus != null
-                    ? const SizedBox.shrink()
-                    : Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        padding: const EdgeInsets.all(16),
-                        child: const Icon(
-                          Icons.play_arrow,
-                          size: 48,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
+              child: const SizedBox.shrink(),
             ),
           ),
+          // Tombol TENGAH — SATU-SATUNYA putar/jeda di Player:
+          // overlay play saat jeda, tombol jeda saat diputar (gaya
+          // lingkaran yang sama, pola referensi). Lapisan terpisah
+          // di ATAS zona ketuk: ketuk tombol ini hanya memutar/
+          // menjeda (detektor dalam menang atas detektor luar),
+          // ketuk di luar tombol hanya toggle chrome. TIDAK PERNAH
+          // tampil saat retry jaringan (chip retry yang tampil) dan
+          // tidak tampil bila induk menyembunyikan chrome.
+          if (widget.showCenterButton && _retryStatus == null)
+            Center(
+              child: GestureDetector(
+                onTap: _togglePlay,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  padding: const EdgeInsets.all(16),
+                  child: Icon(
+                    controller.value.isPlaying
+                        ? Icons.pause
+                        : Icons.play_arrow,
+                    size: 48,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           // Chip retry otomatis (jaringan putus di tengah putar):
           // status jelas + spinner kecil, video tidak ditutup layar
           // error — begitu jaringan kembali, putar lanjut dari
@@ -941,7 +970,8 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
             // nyata dari controller), tanpa tombol.
             // Mode fokus/fullscreen: progress tipis YANG BISA
             // DI-SEEK (bukan indikator mati) — satu-satunya kontrol
-            // di mode video saja; ketuk video = jeda/putar.
+            // di mode video saja; ketuk video = tampil/sembunyi
+            // chrome (tombol tengah = putar/jeda).
             child: widget.thinProgressOnly
                 ? SliderTheme(
                     data: SliderTheme.of(context).copyWith(
