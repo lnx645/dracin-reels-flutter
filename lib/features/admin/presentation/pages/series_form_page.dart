@@ -39,8 +39,6 @@ class _SeriesFormPageState extends State<SeriesFormPage> {
   /// Genre terpilih (multi-pilih). Diisi dari genre series lama saat
   /// edit; kosong bila backend belum mengembalikan genre.
   final Set<int> _selectedGenreIds = <int>{};
-  bool _saving = false;
-  String? _error;
 
   bool get _isEdit => widget.existing != null;
 
