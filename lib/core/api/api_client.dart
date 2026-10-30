@@ -140,6 +140,31 @@ class ApiClient {
     }
   }
 
+  /// Ambil berkas teks mentah (subtitle VTT/SRT) dari URL yang sudah
+  /// di-resolve (absolut atau lewat basis media). Bukan JSON — body
+  /// dikembalikan apa adanya. Gagal → ApiException; pemanggil
+  /// menampilkan video tanpa subtitle (bukan teks contoh).
+  Future<String> getText(String resolvedUrl) async {
+    try {
+      final response = await _http
+          .get(Uri.parse(resolvedUrl))
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw ApiException(
+          'Subtitle tidak dapat dimuat (${response.statusCode}).',
+          statusCode: response.statusCode,
+        );
+      }
+      return response.body;
+    } on ApiException {
+      rethrow;
+    } on Exception {
+      throw const ApiException(
+        'Tidak dapat terhubung ke server. Periksa koneksi internet.',
+      );
+    }
+  }
+
   Future<dynamic> postJson(
     String path,
     Map<String, dynamic> body,

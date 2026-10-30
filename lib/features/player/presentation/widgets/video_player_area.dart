@@ -28,6 +28,8 @@ class VideoPlayerArea extends StatefulWidget {
     required this.onPlayingChanged,
     this.localFile,
     this.posterUrl = '',
+    this.showControls = true,
+    this.onPositionChanged,
     super.key,
   });
 
@@ -43,6 +45,15 @@ class VideoPlayerArea extends StatefulWidget {
   /// memakai cover series, bukan hitam kosong. Hilang begitu video
   /// benar-benar memutar; tidak pernah menutupi video yang jalan.
   final String posterUrl;
+
+  /// Bila false (state PLAY fokus), bar kontrol penuh diganti progress
+  /// tipis — video tetap jalan, chrome disembunyikan.
+  final bool showControls;
+
+  /// Posisi putar terbaru (dilaporkan saat detik berubah — cukup untuk
+  /// sinkronisasi subtitle; bukan setiap frame agar induk tidak
+  /// rebuild berlebihan).
+  final ValueChanged<Duration>? onPositionChanged;
 
   /// Status putar yang diminta tombol Putar/Jeda di luar area video
   /// (true = putar, false = jeda). Perubahan di sini memutar/menjeda
@@ -203,6 +214,7 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
         _position = position;
         _duration = duration;
       });
+      widget.onPositionChanged?.call(position);
     }
   }
 
@@ -339,39 +351,63 @@ class _VideoPlayerAreaState extends State<VideoPlayerArea> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: Container(
-              color: Colors.black54,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    onPressed: _togglePlay,
-                    icon: Icon(
-                      controller.value.isPlaying
-                          ? Icons.pause
-                          : Icons.play_arrow,
-                      color: Colors.white,
+            // State PLAY fokus: hanya progress tipis (posisi/durasi
+            // nyata dari controller), tanpa tombol.
+            child: widget.showControls
+                ? Container(
+                    color: Colors.black54,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        IconButton(
+                          onPressed: _togglePlay,
+                          icon: Icon(
+                            controller.value.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Expanded(
+                          child: Slider(
+                            value:
+                                durationMs == 0 ? 0 : positionMs.toDouble(),
+                            max: durationMs == 0
+                                ? 1
+                                : durationMs.toDouble(),
+                            onChanged: durationMs == 0
+                                ? null
+                                : (value) => controller.seekTo(
+                                      Duration(
+                                        milliseconds: value.round(),
+                                      ),
+                                    ),
+                          ),
+                        ),
+                        Text(
+                          '${_formatDuration(_position)} / '
+                          '${_formatDuration(_duration)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : LinearProgressIndicator(
+                    value: durationMs == 0
+                        ? 0
+                        : positionMs / durationMs,
+                    minHeight: 4,
+                    backgroundColor: Colors.white24,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.white,
                     ),
                   ),
-                  Expanded(
-                    child: Slider(
-                      value: durationMs == 0 ? 0 : positionMs.toDouble(),
-                      max: durationMs == 0 ? 1 : durationMs.toDouble(),
-                      onChanged: durationMs == 0
-                          ? null
-                          : (value) => controller.seekTo(
-                                Duration(milliseconds: value.round()),
-                              ),
-                    ),
-                  ),
-                  Text(
-                    '${_formatDuration(_position)} / '
-                    '${_formatDuration(_duration)}',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
           ),
         ],
       ),

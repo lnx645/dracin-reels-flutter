@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/api/api_client.dart';
@@ -11,7 +14,9 @@ import '../../../feed/presentation/bloc/feed_state.dart';
 import '../../../series/domain/entities/series.dart';
 import '../../../series/domain/repositories/series_repository.dart';
 import '../../../series/presentation/bloc/series_bloc.dart';
+import '../../../series/presentation/pages/series_detail_page.dart';
 import '../widgets/video_player_area.dart';
+import '../widgets/subtitle_parser.dart';
 import '../../../wallet/domain/repositories/wallet_repository.dart';
 import '../../../wallet/presentation/bloc/wallet_bloc.dart';
 import '../../../wallet/presentation/widgets/comments_sheet.dart';
@@ -56,6 +61,31 @@ class _PlayerPageState extends State<PlayerPage> {
   /// Episode yang sudah tercatat ke riwayat di sesi player ini.
   final Set<String> _recorded = <String>{};
 
+  /// DUA STATE PLAYER (klarifikasi uwa):
+  /// - PAUSE = kontrol: chrome lengkap (header, rel kanan, judul,
+  ///   tombol, progress, baris episode).
+  /// - PLAY = imersi: chrome menghilang (fade/collapse), tersisa video
+  ///   + subtitle + progress tipis. Ketuk video saat play → pause +
+  ///   chrome kembali; ketuk saat pause → play + chrome hilang
+  ///   otomatis setelah ~3 detik (timer di-reset tiap interaksi).
+  bool _chromeVisible = true;
+  Timer? _hideTimer;
+
+  /// Mode layar penuh (landscape, orientasi dikunci selama aktif).
+  bool _fullscreen = false;
+
+  /// Subtitle episode aktif (VTT/SRT ter-parse). Kosong = tidak ada
+  /// subtitle atau gagal dimuat/parse → tanpa overlay, bukan teks
+  /// contoh.
+  List<SubtitleCue> _subtitleCues = <SubtitleCue>[];
+  String _subtitleUrlFetched = '';
+
+  /// Posisi putar terbaru (untuk sinkronisasi subtitle).
+  Duration _videoPosition = Duration.zero;
+
+  /// Deskripsi diperluas atau cuplikan 2 baris.
+  bool _descriptionExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -65,17 +95,88 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     _playRequest.dispose();
+    // Pulihkan orientasi bila keluar halaman saat fullscreen aktif.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
   /// Status putar dari controller video (bukan lagi bool UI semata):
   /// label tombol Putar/Jeda mengikuti apa yang benar-benar terjadi.
+  /// Memutar → mulai timer sembunyikan chrome 3 detik; dijeda →
+  /// batalkan timer + chrome kembali.
   void _onPlayingChanged(bool playing) {
     if (!mounted || playing == _isPlaying) {
       return;
     }
     setState(() => _isPlaying = playing);
+    if (playing) {
+      _resetHideTimer();
+    } else {
+      _hideTimer?.cancel();
+      if (!_chromeVisible) {
+        setState(() => _chromeVisible = true);
+      }
+    }
+  }
+
+  /// Timer auto-hide chrome: hanya berjalan saat benar-benar memutar;
+  /// tiap interaksi memanggil ini lagi (timer di-reset).
+  void _resetHideTimer() {
+    _hideTimer?.cancel();
+    if (!_isPlaying) {
+      return;
+    }
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isPlaying && _chromeVisible) {
+        setState(() => _chromeVisible = false);
+      }
+    });
+  }
+
+  /// Layar penuh: kunci orientasi landscape; keluar → pulihkan semua
+  /// orientasi. Controller video TIDAK dipindah — halaman yang sama
+  /// yang membesar, jadi posisi putar tidak hilang.
+  void _toggleFullscreen() {
+    setState(() => _fullscreen = !_fullscreen);
+    if (_fullscreen) {
+      SystemChrome.setPreferredOrientations(
+        <DeviceOrientation>[
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+      );
+    } else {
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    }
+    _resetHideTimer();
+  }
+
+  /// Ambil + parse subtitle episode aktif. Gagal/parse kosong → cue
+  /// kosong (tanpa overlay), bukan error yang memblokir video.
+  Future<void> _fetchSubtitles(String rawUrl) async {
+    final resolved = resolveMediaUrl(rawUrl);
+    if (resolved.isEmpty) {
+      return;
+    }
+    try {
+      final text = await context.read<ApiClient>().getText(resolved);
+      if (!mounted || _subtitleUrlFetched != rawUrl) {
+        return;
+      }
+      setState(() => _subtitleCues = parseSubtitle(text));
+    } on Exception {
+      if (mounted && _subtitleUrlFetched == rawUrl) {
+        setState(() => _subtitleCues = <SubtitleCue>[]);
+      }
+    }
+  }
+
+  void _onVideoPosition(Duration position) {
+    if (mounted) {
+      setState(() => _videoPosition = position);
+    }
   }
 
   /// Id `s{seriesId}e{episodeId}` → seriesId; `epN` lama → 1.
@@ -177,10 +278,16 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   void _switchTo(String episodeId) {
+    _hideTimer?.cancel();
     setState(() {
       _currentId = episodeId;
       _seriesId = _parseSeriesId(episodeId) ?? _seriesId;
       _isPlaying = false;
+      // Episode baru = state PAUSE (chrome kembali) + posisi +
+      // deskripsi di-reset.
+      _chromeVisible = true;
+      _videoPosition = Duration.zero;
+      _descriptionExpanded = false;
     });
     // Controller baru tidak boleh auto-memutar episode pengganti.
     _playRequest.value = false;
@@ -434,12 +541,78 @@ class _PlayerPageState extends State<PlayerPage> {
     );
   }
 
+  /// Buka detail series dari Player (judul / menu "..."): kembali ke
+  /// Player bila episode dipilih di detail (pop + ganti episode).
+  void _openSeriesDetail() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SeriesDetailPage(
+          seriesId: _seriesId,
+          onOpenEpisode: (episodeId) {
+            Navigator.of(context).pop();
+            _switchTo(episodeId);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Header pola referensi: kembali + "Ep. N" + "..." (menu →
+  /// Daftar Episode / Detail Series). Dibangun di body (bukan AppBar)
+  /// agar bisa collapse bersama chrome saat PLAY fokus.
+  Widget _headerRow(
+    Episode episode,
+    List<SeriesEpisode> seriesEpisodes,
+    int seriesId,
+  ) {
+    return Row(
+      children: <Widget>[
+        IconButton(
+          tooltip: 'Kembali',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back),
+        ),
+        Expanded(
+          child: Text(
+            'Ep. ${episode.number}',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'Opsi',
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) {
+            _resetHideTimer();
+            if (value == 'episodes') {
+              _showEpisodeList(seriesEpisodes, seriesId);
+            } else if (value == 'detail') {
+              _openSeriesDetail();
+            }
+          },
+          itemBuilder: (_) => <PopupMenuEntry<String>>[
+            if (seriesEpisodes.isNotEmpty)
+              const PopupMenuItem(
+                value: 'episodes',
+                child: Text('Daftar Episode'),
+              ),
+            const PopupMenuItem(
+              value: 'detail',
+              child: Text('Detail Series'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _videoArea(
     bool locked,
     SeriesEpisode? lockedDetail,
     SeriesEpisode? detail,
     bool detailLoading,
     String coverUrl,
+    Episode episode,
   ) {
     // ATURAN KEJUJURAN STATE (cacat kelas terburuk: ikon "memutar" tanpa
     // video jalan): area video TIDAK PERNAH menampilkan gradasi statis
@@ -468,6 +641,9 @@ class _PlayerPageState extends State<PlayerPage> {
         playRequest: _playRequest,
         onPlayingChanged: _onPlayingChanged,
         posterUrl: coverUrl,
+        // State PLAY fokus: kontrol penuh → progress tipis.
+        showControls: _chromeVisible,
+        onPositionChanged: _onVideoPosition,
       );
     } else if (detailLoading) {
       video = Stack(
@@ -492,11 +668,146 @@ class _PlayerPageState extends State<PlayerPage> {
         onPlayingChanged: _onPlayingChanged,
       );
     }
+    // Rel kanan hanya saat video (tidak terkunci); di state PLAY fokus
+    // dan di fullscreen ia menghilang bersama chrome.
+    final railVisible =
+        lockedDetail == null && _chromeVisible && !_fullscreen;
+    final currentCue = detail != null && lockedDetail == null
+        ? cueAt(_subtitleCues, _videoPosition)
+        : null;
     return Stack(
       children: <Widget>[
         Positioned.fill(child: video),
         if (lockedDetail != null)
           Positioned.fill(child: _lockOverlay(lockedDetail)),
+        // Rel kanan: Suka / Komentar / Bagikan / Simpan — ikon TANPA
+        // angka (API tidak menyediakan hitungan; angka referensi
+        // 18,4K/192/24,6K TIDAK PERNAH ditiru).
+        Positioned(
+          right: 8,
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            ignoring: !railVisible,
+            child: AnimatedOpacity(
+              opacity: railVisible ? 1 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    _PlayerAction(
+                      icon: episode.isLiked
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      label: 'Suka',
+                      active: episode.isLiked,
+                      onPressed: () {
+                        _resetHideTimer();
+                        _toggleLike(episode);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _PlayerAction(
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Komentar',
+                      onPressed: () {
+                        _resetHideTimer();
+                        _showComments(episode);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _PlayerAction(
+                      icon: Icons.share,
+                      label: 'Bagikan',
+                      onPressed: () {
+                        _resetHideTimer();
+                        _showShareSheet();
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _PlayerAction(
+                      icon: episode.isBookmarked
+                          ? Icons.bookmark
+                          : Icons.bookmark_border,
+                      label: 'Simpan',
+                      active: episode.isBookmarked,
+                      onPressed: () {
+                        _resetHideTimer();
+                        _toggleBookmark(episode);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Overlay subtitle: hanya bila ada cue pada posisi putar saat
+        // ini. Gaya keterbacaan (arahan senior UI/UX): teks cukup besar
+        // (17, Semibold), putih kontras tinggi, bayangan gelap +
+        // scrim hitam transparan, posisi aman DI ATAS kontrol/progress
+        // (tidak menabrak progress bar).
+        if (currentCue != null)
+          Positioned(
+            left: 16,
+            right: railVisible ? 72 : 16,
+            bottom: _chromeVisible ? 64 : 20,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  currentCue.text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                    shadows: <Shadow>[
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                      Shadow(
+                        color: Colors.black,
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Keluar fullscreen: selalu terlihat saat fullscreen (jalan
+        // keluar imersi tidak boleh hilang bersama chrome).
+        if (_fullscreen)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                tooltip: 'Keluar dari layar penuh',
+                onPressed: _toggleFullscreen,
+                icon: const Icon(
+                  Icons.fullscreen_exit,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -509,45 +820,59 @@ class _PlayerPageState extends State<PlayerPage> {
     List<SeriesEpisode> seriesEpisodes,
     int seriesId,
     SeriesEpisode? detail,
+    String? seriesTitle,
+    int freeEpisodeCount,
   ) {
     // Tombol Putar hanya bermakna bila ada video yang bisa diputar.
     final canPlay = !locked &&
         detail != null &&
         detail.videoUrl.trim().isNotEmpty;
+    // Blok judul pola referensi: "Ep. N | [Judul Series] >" (ketuk →
+    // detail series). Judul series dari API; bila belum ada, hanya
+    // "Ep. N" (bukan judul karangan).
+    final titleLine = seriesTitle != null && seriesTitle.isNotEmpty
+        ? 'Ep. ${episode.number} | $seriesTitle >'
+        : 'Ep. ${episode.number}';
+    final description = detail?.description ?? episode.description;
+    final showExpand = description.length > 120;
+    final total = seriesEpisodes.length;
+    // Status gratis JUJUR: "Gratis Semua" HANYA bila episode gratis
+    // >= total episode; bila tidak, jumlah gratis sebenarnya.
+    final freeText = total > 0 && freeEpisodeCount >= total
+        ? 'Gratis Semua'
+        : '$freeEpisodeCount Ep gratis';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            episode.title,
-            style: Theme.of(context).textTheme.titleLarge,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Episode ${episode.number}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+          InkWell(
+            onTap: _openSeriesDetail,
+            child: Text(
+              titleLine,
+              style: Theme.of(context).textTheme.titleMedium,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
-            episode.description,
+            description,
             style: Theme.of(context).textTheme.bodyMedium,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            maxLines: _descriptionExpanded ? null : 2,
+            overflow: _descriptionExpanded
+                ? TextOverflow.visible
+                : TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 8),
-          Text(
-            episode.hashtags.join(' '),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          if (showExpand)
+            TextButton(
+              onPressed: () => setState(
+                () => _descriptionExpanded = !_descriptionExpanded,
+              ),
+              child: Text(
+                _descriptionExpanded ? 'Sembunyikan' : 'Selengkapnya',
+              ),
+            ),
           const SizedBox(height: 16),
           Row(
             children: <Widget>[
@@ -665,45 +990,26 @@ class _PlayerPageState extends State<PlayerPage> {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: <Widget>[
-              _PlayerAction(
-                icon: episode.isLiked
-                    ? Icons.favorite
-                    : Icons.favorite_border,
-                label: 'Suka',
-                active: episode.isLiked,
-                onPressed: () => _toggleLike(episode),
+          // Baris bawah pola referensi: "Total N Ep · [status gratis] >"
+          // (ketuk → bottom sheet Daftar Episode). Hanya bila daftar
+          // episode series sudah dimuat (angka dari API, bukan karangan).
+          if (seriesEpisodes.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () => _showEpisodeList(seriesEpisodes, seriesId),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      'Total $total Ep · $freeText >',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
               ),
-              _PlayerAction(
-                icon: Icons.chat_bubble_outline,
-                label: 'Komentar',
-                onPressed: () => _showComments(episode),
-              ),
-              _PlayerAction(
-                icon: Icons.share,
-                label: 'Bagikan',
-                onPressed: _showShareSheet,
-              ),
-              _PlayerAction(
-                icon: episode.isBookmarked
-                    ? Icons.bookmark
-                    : Icons.bookmark_border,
-                label: 'Simpan',
-                active: episode.isBookmarked,
-                onPressed: () => _toggleBookmark(episode),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => _showEpisodeList(seriesEpisodes, seriesId),
-              child: const Text('Daftar Episode'),
             ),
-          ),
+          ],
           const SizedBox(height: 8),
           Text(
             'Video diputar dari tautan episode (file video langsung '
@@ -867,13 +1173,49 @@ class _PlayerPageState extends State<PlayerPage> {
                     }
                   });
                 }
+                // Subtitle: ambil sekali per URL subtitle baru (di
+                // luar build lewat post-frame agar tidak setState saat
+                // build).
+                final subtitleUrl = detail?.subtitleUrl;
+                if (subtitleUrl != null &&
+                    subtitleUrl.isNotEmpty &&
+                    _subtitleUrlFetched != subtitleUrl) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _subtitleUrlFetched != subtitleUrl) {
+                      _subtitleUrlFetched = subtitleUrl;
+                      _fetchSubtitles(subtitleUrl);
+                    }
+                  });
+                }
+                final chromeVisible = _chromeVisible && !_fullscreen;
                 return Scaffold(
-                  appBar: AppBar(
-                    title: Text('Episode ${episode.number}'),
-                  ),
                   body: SafeArea(
                     child: Column(
                       children: <Widget>[
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 300),
+                          child: chromeVisible
+                              ? Column(
+                                  children: <Widget>[
+                                    _headerRow(
+                                      episode,
+                                      seriesEpisodes,
+                                      _seriesId,
+                                    ),
+                                    // Tombol "Layar Penuh" di atas video.
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        onPressed: _toggleFullscreen,
+                                        icon: const Icon(Icons.fullscreen),
+                                        label:
+                                            const Text('Layar Penuh'),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                         Expanded(
                           flex: 5,
                           child: _videoArea(
@@ -883,20 +1225,25 @@ class _PlayerPageState extends State<PlayerPage> {
                             detailState.detail == null &&
                                 detailState.errorMessage == null,
                             detailState.detail?.series.coverUrl ?? '',
-                          ),
-                        ),
-                        Expanded(
-                          flex: 4,
-                          child: _infoSection(
                             episode,
-                            previousId,
-                            nextId,
-                            locked,
-                            seriesEpisodes,
-                            _seriesId,
-                            detail,
                           ),
                         ),
+                        if (chromeVisible)
+                          Expanded(
+                            flex: 4,
+                            child: _infoSection(
+                              episode,
+                              previousId,
+                              nextId,
+                              locked,
+                              seriesEpisodes,
+                              _seriesId,
+                              detail,
+                              seriesTitle,
+                              detailState.detail?.series.freeEpisodeCount ??
+                                  0,
+                            ),
+                          ),
                       ],
                     ),
                   ),

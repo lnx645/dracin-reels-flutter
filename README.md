@@ -3,8 +3,29 @@
 Aplikasi reels video pendek ala TikTok, ditulis ulang dengan Flutter
 (menggantikan versi Rust/egui yang diparkir — repo Rust tidak dihapus).
 
-## Status jujur v0.2.4
+## Status jujur v0.2.5
 
+- **Pola Jelajahi (layout referensi, bukan salinan konten/merek):**
+  bilah pencarian (kolom + tombol "Cari"); filter Kategori (pemilih
+  genre → `?genre_id=`), Peringkat (rating tertinggi dulu), Baru
+  Tayang (terbaru dulu) — urut sisi klien karena API belum punya
+  param urut; grid poster masonry 2 kolom (cover / gradasi bertitel,
+  judul, "Genre | N episode", ketuk → detail); kartu Lanjutkan dari
+  WatchProgress API ("Ep. X / Y" bila total diketahui, bila tidak
+  hanya "Ep. X"). Tanpa badge kuning mengambang / elemen promo
+  melayang.
+- **Pola Player + dua state (layout referensi, bukan salinan):**
+  header kembali + "Ep. N" + "..." (Daftar Episode / Detail Series);
+  subtitle overlay VTT/SRT sinkron posisi (tanpa subtitle bila tidak
+  ada/gagal parse); tombol Layar Penuh (landscape, posisi tidak
+  hilang); rel kanan Suka/Komentar/Bagikan/Simpan TANPA angka (API
+  tidak menyediakan hitungan); judul "Ep. N | [Judul Series] >" +
+  deskripsi bisa diperluas; progress nyata dari controller; baris
+  "Total N Ep · Gratis Semua >" hanya bila gratis >= total, bila
+  tidak jumlah gratis sebenarnya. PAUSE = chrome lengkap; PLAY =
+  chrome hilang (video + subtitle + progress tipis), ketuk video
+  untuk pause, auto-hide ~3 detik setelah play (timer di-reset tiap
+  interaksi). Tanpa logo/koin mengambang.
 - **Video MEMUTAR di halaman Player** (file video langsung atau HLS
   dari `video_url` episode — path upload `media/...` di-resolve lewat
   basis media proxy, link eksternal http(s) dipakai apa adanya).

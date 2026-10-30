@@ -11,6 +11,7 @@ class Series {
     required this.rating,
     required this.genres,
     this.tagline = '',
+    this.createdAt,
   });
 
   final int id;
@@ -22,6 +23,11 @@ class Series {
   final int freeEpisodeCount;
   final double rating;
   final List<Genre> genres;
+
+  /// Tanggal series dibuat (dari `created_at` API). Null bila backend
+  /// tidak mengembalikannya — urutan "Baru Tayang" menaruh yang tanpa
+  /// tanggal di akhir, bukan mengarang tanggal.
+  final DateTime? createdAt;
 
   /// Tagline dari API (kontrak baru). Bila backend belum mengembalikan
   /// tagline, nilainya '' — UI menyembunyikan baris tagline, bukan
@@ -39,6 +45,7 @@ class Series {
       }
     }
     final rating = json['rating'];
+    final createdRaw = json['created_at'];
     return Series(
       id: json['id'] is int ? json['id'] as int : 0,
       title: json['title'] is String ? json['title'] as String : '',
@@ -58,6 +65,9 @@ class Series {
           : 0,
       rating: rating is num ? rating.toDouble() : 0,
       genres: genres,
+      createdAt: createdRaw is String
+          ? DateTime.tryParse(createdRaw)
+          : null,
     );
   }
 }
